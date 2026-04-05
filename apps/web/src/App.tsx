@@ -1,11 +1,15 @@
 import React, { useEffect, useState, createContext, useContext } from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, NavLink } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { ThemeProvider } from 'styled-components';
 import { DbClient } from '@fresh/core/db';
 import { useFinanceSocket } from '@fresh/core/channels';
 import { TransactionCategorizer, AnomalyDetector } from '@fresh/core/ml';
 import { InferenceSession } from 'onnxruntime-web';
+import styled from 'styled-components';
 import { initDb } from './store/db';
+import { theme } from './theme';
+import GlobalStyle from './GlobalStyle';
 import { Dashboard } from './pages/Dashboard';
 import { Accounts } from './pages/Accounts';
 import { Transactions } from './pages/Transactions';
@@ -32,7 +36,6 @@ const queryClient = new QueryClient({
 
 const CDN_BASE = import.meta.env.VITE_CDN_BASE_URL ?? 'https://cdn.fresh.app';
 
-// Simple model store backed by Cache API
 const webModelStore = {
   async get(type: string): Promise<ArrayBuffer | null> {
     const cache = await caches.open('fresh-models');
@@ -55,6 +58,124 @@ const categorizer = new TransactionCategorizer(onnxFactory, webModelStore, CDN_B
 const anomalyDetector = new AnomalyDetector(onnxFactory, webModelStore, CDN_BASE);
 
 // ---------------------------------------------------------------------------
+// Styled components — app shell
+// ---------------------------------------------------------------------------
+
+const SplashScreen = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  font-size: ${({ theme }) => theme.font.size.md};
+  color: ${({ theme }) => theme.color.textMuted};
+  background: ${({ theme }) => theme.color.bg};
+`;
+
+const ErrorScreen = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  padding: ${({ theme }) => theme.space[6]};
+  color: ${({ theme }) => theme.color.danger};
+  font-size: ${({ theme }) => theme.font.size.md};
+`;
+
+const AppShell = styled.div`
+  display: flex;
+  height: 100vh;
+  overflow: hidden;
+  background: ${({ theme }) => theme.color.bg};
+`;
+
+const Sidebar = styled.nav`
+  width: ${({ theme }) => theme.sidebar.width};
+  min-width: ${({ theme }) => theme.sidebar.width};
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: ${({ theme }) => theme.color.surface};
+  border-right: 1px solid ${({ theme }) => theme.color.border};
+  padding: ${({ theme }) => theme.space[5]} 0;
+  overflow-y: auto;
+`;
+
+const Logo = styled.div`
+  padding: 0 ${({ theme }) => theme.space[5]};
+  margin-bottom: ${({ theme }) => theme.space[6]};
+  font-size: ${({ theme }) => theme.font.size['2xl']};
+  font-weight: ${({ theme }) => theme.font.weight.bold};
+  color: ${({ theme }) => theme.color.green600};
+  letter-spacing: -0.5px;
+`;
+
+const NavList = styled.ul`
+  list-style: none;
+  flex: 1;
+  padding: 0 ${({ theme }) => theme.space[3]};
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+`;
+
+const NavItem = styled.li`
+  a {
+    display: flex;
+    align-items: center;
+    gap: ${({ theme }) => theme.space[2]};
+    padding: ${({ theme }) => theme.space[2]} ${({ theme }) => theme.space[3]};
+    border-radius: ${({ theme }) => theme.radius.md};
+    font-size: ${({ theme }) => theme.font.size.base};
+    font-weight: ${({ theme }) => theme.font.weight.medium};
+    color: ${({ theme }) => theme.color.textSub};
+    transition: ${({ theme }) => theme.transition.fast};
+    text-decoration: none;
+
+    &:hover {
+      background: ${({ theme }) => theme.color.green50};
+      color: ${({ theme }) => theme.color.green700};
+      text-decoration: none;
+    }
+
+    &.active {
+      background: ${({ theme }) => theme.color.green100};
+      color: ${({ theme }) => theme.color.green700};
+      font-weight: ${({ theme }) => theme.font.weight.semibold};
+    }
+  }
+`;
+
+const StatusBadge = styled.div<{ $connected: boolean }>`
+  margin: 0 ${({ theme }) => theme.space[5]};
+  margin-top: auto;
+  padding-top: ${({ theme }) => theme.space[5]};
+  border-top: 1px solid ${({ theme }) => theme.color.border};
+  display: flex;
+  align-items: center;
+  gap: ${({ theme }) => theme.space[2]};
+  font-size: ${({ theme }) => theme.font.size.xs};
+  font-weight: ${({ theme }) => theme.font.weight.medium};
+  color: ${({ $connected, theme }) =>
+    $connected ? theme.color.success : theme.color.textMuted};
+
+  &::before {
+    content: '';
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: ${({ $connected, theme }) =>
+      $connected ? theme.color.success : theme.color.border};
+    flex-shrink: 0;
+  }
+`;
+
+const Content = styled.main`
+  flex: 1;
+  overflow-y: auto;
+  padding: ${({ theme }) => theme.space[8]};
+`;
+
+// ---------------------------------------------------------------------------
 // App shell
 // ---------------------------------------------------------------------------
 
@@ -73,7 +194,6 @@ export default function App() {
     url: `${import.meta.env.VITE_API_URL ?? 'ws://localhost:4000'}/socket`,
     deviceToken,
     onSyncComplete: async (payload) => {
-      // Device pulls encrypted transaction batch and writes to local DB
       console.log('[Socket] Sync complete:', payload.account_token_ref);
     },
     onModelUpdated: async (payload) => {
@@ -88,57 +208,59 @@ export default function App() {
     },
   });
 
-  if (initError) {
-    return (
-      <div style={{ padding: 24, color: 'red' }}>
-        Failed to initialize local database: {initError}
-      </div>
-    );
-  }
-
-  if (!db) {
-    return <div style={{ padding: 24 }}>Initializing secure local database...</div>;
-  }
-
-  if (!deviceToken) {
-    return (
-      <QueryClientProvider client={queryClient}>
-        <Login />
-      </QueryClientProvider>
-    );
-  }
-
   return (
-    <DbContext.Provider value={db}>
-      <QueryClientProvider client={queryClient}>
-        <BrowserRouter>
-          <div className="app-shell">
-            <nav className="sidebar">
-              <div className="logo">Fresh</div>
-              <div className="connection-status" data-connected={isConnected}>
-                {isConnected ? 'Live' : 'Offline'}
-              </div>
-              <ul>
-                <li><a href="/dashboard">Dashboard</a></li>
-                <li><a href="/accounts">Accounts</a></li>
-                <li><a href="/transactions">Transactions</a></li>
-                <li><a href="/budget">Budget</a></li>
-                <li><a href="/settings">Settings</a></li>
-              </ul>
-            </nav>
-            <main className="content">
-              <Routes>
-                <Route path="/" element={<Navigate to="/dashboard" replace />} />
-                <Route path="/dashboard" element={<Dashboard />} />
-                <Route path="/accounts" element={<Accounts />} />
-                <Route path="/transactions" element={<Transactions />} />
-                <Route path="/budget" element={<Budget />} />
-                <Route path="/settings" element={<Settings />} />
-              </Routes>
-            </main>
-          </div>
-        </BrowserRouter>
-      </QueryClientProvider>
-    </DbContext.Provider>
+    <ThemeProvider theme={theme}>
+      <GlobalStyle />
+      {initError && (
+        <ErrorScreen>Failed to initialize local database: {initError}</ErrorScreen>
+      )}
+      {!initError && !db && (
+        <SplashScreen>Initializing secure local database…</SplashScreen>
+      )}
+      {!initError && db && !deviceToken && (
+        <QueryClientProvider client={queryClient}>
+          <Login />
+        </QueryClientProvider>
+      )}
+      {!initError && db && deviceToken && (
+        <DbContext.Provider value={db}>
+          <QueryClientProvider client={queryClient}>
+            <BrowserRouter>
+              <AppShell>
+                <Sidebar>
+                  <Logo>Fresh</Logo>
+                  <NavList>
+                    {[
+                      { to: '/dashboard',    label: 'Dashboard' },
+                      { to: '/accounts',     label: 'Accounts' },
+                      { to: '/transactions', label: 'Transactions' },
+                      { to: '/budget',       label: 'Budget' },
+                      { to: '/settings',     label: 'Settings' },
+                    ].map(({ to, label }) => (
+                      <NavItem key={to}>
+                        <NavLink to={to}>{label}</NavLink>
+                      </NavItem>
+                    ))}
+                  </NavList>
+                  <StatusBadge $connected={isConnected}>
+                    {isConnected ? 'Live' : 'Offline'}
+                  </StatusBadge>
+                </Sidebar>
+                <Content>
+                  <Routes>
+                    <Route path="/" element={<Navigate to="/dashboard" replace />} />
+                    <Route path="/dashboard"    element={<Dashboard />} />
+                    <Route path="/accounts"     element={<Accounts />} />
+                    <Route path="/transactions" element={<Transactions />} />
+                    <Route path="/budget"       element={<Budget />} />
+                    <Route path="/settings"     element={<Settings />} />
+                  </Routes>
+                </Content>
+              </AppShell>
+            </BrowserRouter>
+          </QueryClientProvider>
+        </DbContext.Provider>
+      )}
+    </ThemeProvider>
   );
 }
