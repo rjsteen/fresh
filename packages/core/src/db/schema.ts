@@ -8,9 +8,6 @@
 export const SCHEMA_VERSION = 4;
 
 export const CREATE_TABLES_SQL = `
-PRAGMA journal_mode = WAL;
-PRAGMA foreign_keys = ON;
-
 -- Schema version tracking
 CREATE TABLE IF NOT EXISTS schema_versions (
   version    INTEGER PRIMARY KEY,

@@ -16,6 +16,7 @@ import { Transactions } from './pages/Transactions';
 import { Budget } from './pages/Budget';
 import { Settings } from './pages/Settings';
 import { Login } from './pages/Login';
+import { Landing } from './pages/Landing';
 
 // ---------------------------------------------------------------------------
 // Contexts
@@ -211,56 +212,70 @@ export default function App() {
   return (
     <ThemeProvider theme={theme}>
       <GlobalStyle />
-      {initError && (
-        <ErrorScreen>Failed to initialize local database: {initError}</ErrorScreen>
-      )}
-      {!initError && !db && (
-        <SplashScreen>Initializing secure local database…</SplashScreen>
-      )}
-      {!initError && db && !deviceToken && (
-        <QueryClientProvider client={queryClient}>
-          <Login />
-        </QueryClientProvider>
-      )}
-      {!initError && db && deviceToken && (
-        <DbContext.Provider value={db}>
+      <BrowserRouter>
+        {initError && (
+          <ErrorScreen>Failed to initialize local database: {initError}</ErrorScreen>
+        )}
+        {!initError && !db && (
+          <SplashScreen>Initializing secure local database…</SplashScreen>
+        )}
+        {!initError && db && (
           <QueryClientProvider client={queryClient}>
-            <BrowserRouter>
-              <AppShell>
-                <Sidebar>
-                  <Logo>Fresh</Logo>
-                  <NavList>
-                    {[
-                      { to: '/dashboard',    label: 'Dashboard' },
-                      { to: '/accounts',     label: 'Accounts' },
-                      { to: '/transactions', label: 'Transactions' },
-                      { to: '/budget',       label: 'Budget' },
-                      { to: '/settings',     label: 'Settings' },
-                    ].map(({ to, label }) => (
-                      <NavItem key={to}>
-                        <NavLink to={to}>{label}</NavLink>
-                      </NavItem>
-                    ))}
-                  </NavList>
-                  <StatusBadge $connected={isConnected}>
-                    {isConnected ? 'Live' : 'Offline'}
-                  </StatusBadge>
-                </Sidebar>
-                <Content>
-                  <Routes>
-                    <Route path="/" element={<Navigate to="/dashboard" replace />} />
-                    <Route path="/dashboard"    element={<Dashboard />} />
-                    <Route path="/accounts"     element={<Accounts />} />
-                    <Route path="/transactions" element={<Transactions />} />
-                    <Route path="/budget"       element={<Budget />} />
-                    <Route path="/settings"     element={<Settings />} />
-                  </Routes>
-                </Content>
-              </AppShell>
-            </BrowserRouter>
+            <Routes>
+              {/* Public routes */}
+              <Route path="/" element={<Landing />} />
+              <Route
+                path="/login"
+                element={deviceToken ? <Navigate to="/dashboard" replace /> : <Login />}
+              />
+
+              {/* Authenticated app shell */}
+              <Route
+                path="/*"
+                element={
+                  !deviceToken ? (
+                    <Navigate to="/" replace />
+                  ) : (
+                    <DbContext.Provider value={db}>
+                      <AppShell>
+                        <Sidebar>
+                          <Logo>Fresh</Logo>
+                          <NavList>
+                            {[
+                              { to: '/dashboard',    label: 'Dashboard' },
+                              { to: '/accounts',     label: 'Accounts' },
+                              { to: '/transactions', label: 'Transactions' },
+                              { to: '/budget',       label: 'Budget' },
+                              { to: '/settings',     label: 'Settings' },
+                            ].map(({ to, label }) => (
+                              <NavItem key={to}>
+                                <NavLink to={to}>{label}</NavLink>
+                              </NavItem>
+                            ))}
+                          </NavList>
+                          <StatusBadge $connected={isConnected}>
+                            {isConnected ? 'Live' : 'Offline'}
+                          </StatusBadge>
+                        </Sidebar>
+                        <Content>
+                          <Routes>
+                            <Route path="/dashboard"    element={<Dashboard />} />
+                            <Route path="/accounts"     element={<Accounts />} />
+                            <Route path="/transactions" element={<Transactions />} />
+                            <Route path="/budget"       element={<Budget />} />
+                            <Route path="/settings"     element={<Settings />} />
+                            <Route path="*"             element={<Navigate to="/dashboard" replace />} />
+                          </Routes>
+                        </Content>
+                      </AppShell>
+                    </DbContext.Provider>
+                  )
+                }
+              />
+            </Routes>
           </QueryClientProvider>
-        </DbContext.Provider>
-      )}
+        )}
+      </BrowserRouter>
     </ThemeProvider>
   );
 }

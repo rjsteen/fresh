@@ -10,8 +10,16 @@
  * or store the DB file encrypted via SubtleCrypto before persisting to OPFS.
  */
 
-import initSqlJs, { type Database } from 'sql.js';
+import type { Database, SqlJsStatic } from 'sql.js';
 import type { SqliteDriver, QueryResult, DbRow } from '@fresh/core/db';
+
+declare global {
+  function initSqlJs(config?: object): Promise<SqlJsStatic>;
+}
+
+async function loadSqlJs(): Promise<SqlJsStatic> {
+  return window.initSqlJs({ locateFile: (file: string) => `/sql-wasm/${file}` });
+}
 
 const OPFS_FILE_NAME = 'fresh.db';
 const DB_KEY_STORAGE = 'pf_db_key';
@@ -78,9 +86,7 @@ export class WebSqliteDriver implements SqliteDriver {
 
   static async create(): Promise<WebSqliteDriver> {
     const driver = new WebSqliteDriver();
-    const SQL = await initSqlJs({
-      locateFile: (file) => `/sql-wasm/${file}`,
-    });
+    const SQL = await loadSqlJs();
 
     driver.key = await getOrCreateDbKey();
     const existing = await loadFromOpfs(driver.key);
