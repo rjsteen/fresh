@@ -1,9 +1,9 @@
 import React, { useEffect, useState, createContext, useContext } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { DbClient } from '@privacyfinance/core/db';
-import { useFinanceSocket } from '@privacyfinance/core/channels';
-import { TransactionCategorizer, AnomalyDetector } from '@privacyfinance/core/ml';
+import { DbClient } from '@fresh/core/db';
+import { useFinanceSocket } from '@fresh/core/channels';
+import { TransactionCategorizer, AnomalyDetector } from '@fresh/core/ml';
 import { InferenceSession } from 'onnxruntime-web';
 import { initDb } from './store/db';
 import { Dashboard } from './pages/Dashboard';
@@ -30,21 +30,21 @@ const queryClient = new QueryClient({
   },
 });
 
-const CDN_BASE = import.meta.env.VITE_CDN_BASE_URL ?? 'https://cdn.privacyfinance.app';
+const CDN_BASE = import.meta.env.VITE_CDN_BASE_URL ?? 'https://cdn.fresh.app';
 
 // Simple model store backed by Cache API
 const webModelStore = {
   async get(type: string): Promise<ArrayBuffer | null> {
-    const cache = await caches.open('pf-models');
+    const cache = await caches.open('fresh-models');
     const resp = await cache.match(`/models/${type}`);
     return resp ? resp.arrayBuffer() : null;
   },
   async set(type: string, _version: string, data: ArrayBuffer): Promise<void> {
-    const cache = await caches.open('pf-models');
+    const cache = await caches.open('fresh-models');
     await cache.put(`/models/${type}`, new Response(data));
   },
   async getVersion(type: string): Promise<string | null> {
-    return localStorage.getItem(`pf_model_version_${type}`);
+    return localStorage.getItem(`fresh_model_version_${type}`);
   },
 };
 
@@ -114,7 +114,7 @@ export default function App() {
         <BrowserRouter>
           <div className="app-shell">
             <nav className="sidebar">
-              <div className="logo">PrivacyFinance</div>
+              <div className="logo">Fresh</div>
               <div className="connection-status" data-connected={isConnected}>
                 {isConnected ? 'Live' : 'Offline'}
               </div>

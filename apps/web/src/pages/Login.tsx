@@ -52,7 +52,7 @@ export function Login() {
   return (
     <div className="login-page">
       <div className="login-card">
-        <h1>PrivacyFinance</h1>
+        <h1>Fresh</h1>
         <p>Your financial data never leaves your device.</p>
         <form onSubmit={handleSubmit}>
           <label>

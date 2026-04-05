@@ -9,9 +9,9 @@
 import * as SQLite from 'expo-sqlite';
 import * as SecureStore from 'expo-secure-store';
 import * as Crypto from 'expo-crypto';
-import type { SqliteDriver, QueryResult, DbRow } from '@privacyfinance/core/db';
+import type { SqliteDriver, QueryResult, DbRow } from '@fresh/core/db';
 
-const DB_NAME = 'privacyfinance.db';
+const DB_NAME = 'fresh.db';
 const KEY_STORE_KEY = 'pf_sqlcipher_key';
 
 async function getOrCreatePassphrase(): Promise<string> {

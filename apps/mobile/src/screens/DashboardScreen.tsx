@@ -7,7 +7,7 @@ import {
   getAccounts,
   getTransactions,
   getSpendingByCategory,
-} from '@privacyfinance/core/db';
+} from '@fresh/core/db';
 import { useDb } from '../context/DbContext';
 
 function currency(n: number) {

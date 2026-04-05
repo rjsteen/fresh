@@ -37,7 +37,7 @@ export interface ModelUpdatedPayload {
 }
 
 export interface SocketOptions {
-  url: string;               // e.g. wss://api.privacyfinance.app/socket
+  url: string;               // e.g. wss://api.fresh.app/socket
   deviceToken: string;       // JWT issued at device registration
   onError?: (error: Error) => void;
   logger?: (kind: string, msg: string, data: unknown) => void;

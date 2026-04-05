@@ -11,9 +11,9 @@
  */
 
 import initSqlJs, { type Database } from 'sql.js';
-import type { SqliteDriver, QueryResult, DbRow } from '@privacyfinance/core/db';
+import type { SqliteDriver, QueryResult, DbRow } from '@fresh/core/db';
 
-const OPFS_FILE_NAME = 'privacyfinance.db';
+const OPFS_FILE_NAME = 'fresh.db';
 const DB_KEY_STORAGE = 'pf_db_key';
 
 export async function getOrCreateDbKey(): Promise<CryptoKey> {

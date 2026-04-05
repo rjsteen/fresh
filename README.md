@@ -1,4 +1,4 @@
-# PrivacyFinance
+# Fresh
 
 A privacy-first personal finance app. The central design guarantee is that **no financial data is ever stored on the server** — transaction history, amounts, and descriptions live exclusively in an encrypted on-device SQLite database.
 
@@ -58,7 +58,7 @@ The server knows you exist. It does not know what you spend.
 ## Repository layout
 
 ```
-privacyfinance/
+fresh/
 ├── apps/
 │   ├── backend/          # Elixir/Phoenix API
 │   ├── web/              # React web app (Vite)
@@ -125,13 +125,13 @@ pnpm install
 ### 3. Build the shared core package
 
 ```sh
-pnpm --filter @privacyfinance/core build
+pnpm --filter @fresh/core build
 ```
 
 ### 4. Start the web app
 
 ```sh
-pnpm --filter @privacyfinance/web exec vite
+pnpm --filter @fresh/web exec vite
 ```
 
 Open **http://localhost:5173**
@@ -139,7 +139,7 @@ Open **http://localhost:5173**
 ### 5. Start the mobile app (optional)
 
 ```sh
-pnpm --filter @privacyfinance/mobile exec expo start
+pnpm --filter @fresh/mobile exec expo start
 ```
 
 Follow the Expo CLI prompts to open on a simulator or physical device.
@@ -163,7 +163,7 @@ pnpm turbo run dev
 | `docker compose up` | Start all backend services |
 | `docker compose down` | Stop all services |
 | `pnpm install` | Install all JS dependencies |
-| `pnpm --filter @privacyfinance/core build` | Build shared core package |
+| `pnpm --filter @fresh/core build` | Build shared core package |
 | `pnpm turbo run build` | Build all packages |
 | `pnpm turbo run dev` | Start all dev servers in watch mode |
 | `pnpm turbo run test` | Run all tests |

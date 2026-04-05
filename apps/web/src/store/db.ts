@@ -3,7 +3,7 @@
  * Initialized once at app startup, then passed via React context.
  */
 
-import { DbClient } from '@privacyfinance/core/db';
+import { DbClient } from '@fresh/core/db';
 import { WebSqliteDriver } from '../db/driver';
 
 let dbClientSingleton: DbClient | null = null;

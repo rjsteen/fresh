@@ -36,7 +36,7 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 import joblib
 
-app = FastAPI(title="PrivacyFinance ML Sidecar", docs_url=None, redoc_url=None)
+app = FastAPI(title="Fresh ML Sidecar", docs_url=None, redoc_url=None)
 security = HTTPBearer()
 
 SIDECAR_TOKEN = os.environ.get("SIDECAR_TOKEN", "dev-sidecar-token")

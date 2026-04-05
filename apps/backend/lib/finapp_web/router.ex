@@ -8,7 +8,7 @@ defmodule FinappWeb.Router do
     plug :accepts, ["json"]
     plug Corsica,
       origins: [
-        "https://app.privacyfinance.app",
+        "https://app.fresh.app",
         ~r/^http:\/\/localhost:\d+$/
       ],
       allow_credentials: true,

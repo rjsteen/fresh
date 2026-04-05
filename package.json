@@ -1,5 +1,5 @@
 {
-  "name": "privacyfinance",
+  "name": "fresh",
   "private": true,
   "workspaces": ["apps/web", "apps/mobile", "packages/*"],
   "devDependencies": {

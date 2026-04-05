@@ -1,5 +1,5 @@
 {
-  "name": "@privacyfinance/mobile",
+  "name": "@fresh/mobile",
   "version": "0.1.0",
   "private": true,
   "main": "expo-router/entry",
@@ -13,7 +13,7 @@
     "lint": "eslint src/"
   },
   "dependencies": {
-    "@privacyfinance/core": "workspace:*",
+    "@fresh/core": "workspace:*",
     "expo": "~52.0.0",
     "expo-router": "~4.0.0",
     "expo-sqlite": "~14.0.0",
