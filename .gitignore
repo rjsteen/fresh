@@ -1,0 +1,37 @@
+node_modules/
+dist/
+.next/
+.turbo/
+*.local
+.env
+.env.*
+!.env.example
+
+# Elixir
+apps/backend/_build/
+apps/backend/deps/
+apps/backend/.elixir_ls/
+apps/backend/priv/static/uploads/
+
+# Python
+sidecar/__pycache__/
+sidecar/.venv/
+sidecar/*.egg-info/
+sidecar/dist/
+sidecar/models/weights/
+*.pyc
+*.pyo
+
+# React Native
+apps/mobile/android/
+apps/mobile/ios/
+apps/mobile/.expo/
+
+# Coverage
+coverage/
+lcov.info
+
+# SQLite dev DBs
+*.db
+*.db-shm
+*.db-wal

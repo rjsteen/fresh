@@ -1,0 +1,56 @@
+{
+  "name": "@privacyfinance/core",
+  "version": "0.1.0",
+  "private": true,
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./db": {
+      "import": "./dist/db/index.mjs",
+      "require": "./dist/db/index.js",
+      "types": "./dist/db/index.d.ts"
+    },
+    "./channels": {
+      "import": "./dist/channels/index.mjs",
+      "require": "./dist/channels/index.js",
+      "types": "./dist/channels/index.d.ts"
+    },
+    "./ml": {
+      "import": "./dist/ml/index.mjs",
+      "require": "./dist/ml/index.js",
+      "types": "./dist/ml/index.d.ts"
+    },
+    "./budget": {
+      "import": "./dist/budget/index.mjs",
+      "require": "./dist/budget/index.js",
+      "types": "./dist/budget/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "lint": "eslint src/",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "phoenix": "^1.7.14",
+    "uuid": "^11.0.3",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/phoenix": "^1.6.7",
+    "@types/react": "^19.2.14",
+    "@types/uuid": "^10.0.0",
+    "tsup": "^8.3.5",
+    "typescript": "^5.7.2"
+  },
+  "peerDependencies": {
+    "react": ">=18.0.0"
+  }
+}

@@ -1,0 +1,123 @@
+services:
+  # ---------------------------------------------------------------------------
+  # Postgres — stores ZERO financial data
+  # Users, devices, sync job schedules, model versions only
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: finapp_dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ---------------------------------------------------------------------------
+  # Redis — session keys, rate limiting, distributed locks
+  # ---------------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    command: redis-server --save "" --appendonly no  # No persistence in dev
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # ---------------------------------------------------------------------------
+  # Phoenix backend
+  # ---------------------------------------------------------------------------
+  backend:
+    build:
+      context: ./apps/backend
+      dockerfile: Dockerfile.dev
+    ports:
+      - "4000:4000"
+    environment:
+      DATABASE_URL: "ecto://postgres:postgres@postgres/finapp_dev"
+      SECRET_KEY_BASE: "local-dev-secret-key-base-not-for-production-use-at-all-ok"
+      GUARDIAN_SECRET_KEY: "local-dev-guardian-secret"
+      CLOAK_KEY_BASE64: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+      REDIS_URL: "redis://redis:6379"
+      ML_SIDECAR_URL: "http://ml_sidecar:8001"
+      CDN_BASE_URL: "http://minio:9000/finapp-models"
+      PHX_HOST: "localhost"
+      PORT: "4000"
+      MIX_ENV: "dev"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./apps/backend:/app
+      - backend_deps:/app/deps
+      - backend_build:/app/_build
+
+  # ---------------------------------------------------------------------------
+  # Python ML sidecar — internal only, not port-forwarded outside compose
+  # ---------------------------------------------------------------------------
+  ml_sidecar:
+    build:
+      context: ./sidecar
+    environment:
+      SIDECAR_TOKEN: "dev-sidecar-token"
+      PHOENIX_INTERNAL_URL: "http://backend:4000"
+      R2_ENDPOINT_URL: "http://minio:9000"
+      R2_BUCKET: "finapp-models"
+      R2_ACCESS_KEY_ID: "minioadmin"
+      R2_SECRET_ACCESS_KEY: "minioadmin"
+    depends_on:
+      - backend
+      - minio
+    # Not exposed externally — backend calls it via internal Docker DNS
+    expose:
+      - "8001"
+
+  # ---------------------------------------------------------------------------
+  # MinIO — local Cloudflare R2 substitute for model weight storage
+  # ---------------------------------------------------------------------------
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"   # S3-compatible API
+      - "9001:9001"   # MinIO Console
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # MinIO bucket initialization
+  minio_init:
+    image: minio/mc:latest
+    depends_on:
+      - minio
+    entrypoint: >
+      /bin/sh -c "
+        mc alias set local http://minio:9000 minioadmin minioadmin;
+        mc mb --ignore-existing local/finapp-models;
+        mc anonymous set download local/finapp-models;
+        exit 0;
+      "
+
+volumes:
+  postgres_data:
+  minio_data:
+  backend_deps:
+  backend_build:
