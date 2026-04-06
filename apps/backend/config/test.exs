@@ -26,6 +26,8 @@ config :finapp, Finapp.Vault,
     }
   ]
 
-config :finapp, Oban, testing: :inline
+config :finapp, :sidecar_token, "test-sidecar-token"
+
+config :finapp, Oban, repo: Finapp.Repo, testing: :manual
 
 config :logger, level: :warning

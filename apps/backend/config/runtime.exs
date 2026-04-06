@@ -54,6 +54,9 @@ if config_env() == :prod do
   config :finapp, :ml_sidecar_url,
     System.get_env("ML_SIDECAR_URL") || raise("ML_SIDECAR_URL not set")
 
+  config :finapp, :sidecar_token,
+    System.get_env("SIDECAR_TOKEN") || raise("SIDECAR_TOKEN not set")
+
   config :finapp, :cdn_base_url,
     System.get_env("CDN_BASE_URL") || raise("CDN_BASE_URL not set")
 end
