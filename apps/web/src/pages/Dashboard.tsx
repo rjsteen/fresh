@@ -2,12 +2,7 @@ import React from 'react';
 import { useQuery } from '@tanstack/react-query';
 import styled from 'styled-components';
 import { format } from 'date-fns';
-
-const API = import.meta.env.VITE_API_URL ?? 'http://localhost:4000';
-
-function authHeaders() {
-  return { Authorization: `Bearer ${localStorage.getItem('device_token')}` };
-}
+import { API, authHeaders } from '../utils/api';
 
 // ---------------------------------------------------------------------------
 // Styled components

@@ -27,6 +27,7 @@ config :finapp, Finapp.Vault,
   ]
 
 config :finapp, :sidecar_token, "test-sidecar-token"
+config :finapp, :cdn_base_url, "https://cdn.test.example.com"
 
 config :finapp, Oban, repo: Finapp.Repo, testing: :manual
 
