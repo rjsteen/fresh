@@ -7,6 +7,7 @@ import { DbClient } from '@fresh/core/db';
 import { theme } from './theme';
 import GlobalStyle from './GlobalStyle';
 import { initDb } from './store/db';
+import { authHeaders } from './utils/api';
 import { Dashboard } from './pages/Dashboard';
 import { Accounts } from './pages/Accounts';
 import { Transactions } from './pages/Transactions';
@@ -131,11 +132,11 @@ type ModelEntry = { model_type: string; version: string; cdn_url: string; checks
 
 function useModelVersionCheck() {
   useEffect(() => {
-    const token = localStorage.getItem('device_token');
-    if (!token) return;
+    const controller = new AbortController();
 
     fetch('/api/v1/models/current', {
-      headers: { Authorization: `Bearer ${token}` },
+      headers: authHeaders(),
+      signal: controller.signal,
     })
       .then((r) => r.json())
       .then(({ models }: { models: ModelEntry[] }) => {
@@ -150,6 +151,8 @@ function useModelVersionCheck() {
         }
       })
       .catch(() => {});
+
+    return () => controller.abort();
   }, []);
 }
 
