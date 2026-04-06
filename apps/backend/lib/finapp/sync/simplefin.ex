@@ -12,45 +12,65 @@ defmodule Finapp.Sync.SimpleFin do
   in plaintext in Postgres.
   """
 
-  alias Finapp.Sync.SyncJob
+  alias Finapp.Sync.{SyncJob, Transaction}
   alias Finapp.Vault
 
-  @doc "Exchange a one-time setup token for a permanent access URL"
+  @doc """
+  Exchange a one-time setup token for a permanent access URL.
+
+  Returns `{:ok, encrypted_ref}` where `encrypted_ref` is ready to be stored
+  in `sync_jobs.encrypted_access_url_ref`. The plaintext URL never leaves this function.
+  """
   def claim_access_url(setup_token) do
-    # Setup tokens are base64-encoded URLs like https://bridge.simplefin.org/simplefin/claim/<token>
     with {:ok, claim_url} <- decode_setup_token(setup_token),
-         {:ok, resp} <- Req.post(claim_url, body: "") do
-      case resp.status do
-        200 -> {:ok, resp.body}
-        _ -> {:error, "Claim failed: #{resp.status}"}
-      end
+         {:ok, resp} <- do_req_post(claim_url, body: ""),
+         {:ok, encrypted} <- Vault.encrypt(resp.body) do
+      {:ok, encrypted}
     end
   end
 
-  @doc "Fetch transactions for a sync job. Returns raw transaction data."
+  @doc "Fetch transactions for a sync job. Returns parsed transactions and next cursor."
   def fetch_transactions(%SyncJob{} = job) do
-    with {:ok, access_url} <- decrypt_access_url(job.encrypted_access_url_ref),
-         {:ok, resp} <- do_fetch(access_url, job.last_cursor) do
+    with {:ok, access_url} <- Vault.decrypt(job.encrypted_access_url_ref),
+         {:ok, resp} <- do_req_get(access_url, params: cursor_params(job.last_cursor), receive_timeout: 30_000) do
       parse_response(resp)
     end
   end
 
-  defp do_fetch(access_url, cursor) do
-    params = if cursor, do: [start_date: cursor], else: []
+  # --- Private ---
 
-    case Req.get(access_url, params: params, receive_timeout: 30_000) do
-      {:ok, %{status: 200} = resp} -> {:ok, resp}
-      {:ok, %{status: 429}} -> {:error, :rate_limited}
-      {:ok, %{status: 401}} -> {:error, :connection_expired}
-      {:ok, %{status: status}} -> {:error, "SimpleFIN returned #{status}"}
-      {:error, reason} -> {:error, reason}
+  defp cursor_params(nil), do: []
+  defp cursor_params(cursor), do: [start_date: cursor]
+
+  defp do_req_get(url, opts) do
+    opts = base_opts(opts)
+    case req_plug() do
+      nil -> Req.get(url, opts)
+      plug -> Req.get(url, Keyword.put(opts, :plug, plug))
     end
+    |> handle_http_response()
   end
 
-  defp parse_response(%{body: body}) do
-    # SimpleFIN response shape:
-    # { "accounts": [{ "id": "...", "transactions": [...] }] }
-    accounts = get_in(body, ["accounts"]) || []
+  defp do_req_post(url, opts) do
+    opts = base_opts(opts)
+    case req_plug() do
+      nil -> Req.post(url, opts)
+      plug -> Req.post(url, Keyword.put(opts, :plug, plug))
+    end
+    |> handle_http_response()
+  end
+
+  # Disable Req's built-in retry so callers control retry behaviour (e.g. Oban snooze).
+  defp base_opts(opts), do: Keyword.put_new(opts, :retry, false)
+
+  defp handle_http_response({:ok, %{status: 200} = resp}), do: {:ok, resp}
+  defp handle_http_response({:ok, %{status: 401}}), do: {:error, :connection_expired}
+  defp handle_http_response({:ok, %{status: 429}}), do: {:error, :rate_limited}
+  defp handle_http_response({:ok, %{status: status}}), do: {:error, "SimpleFIN returned #{status}"}
+  defp handle_http_response({:error, reason}), do: {:error, reason}
+
+  defp parse_response(%{body: body}) when is_map(body) do
+    accounts = body["accounts"] || []
 
     transactions =
       Enum.flat_map(accounts, fn account ->
@@ -58,7 +78,6 @@ defmodule Finapp.Sync.SimpleFin do
         |> Enum.map(&normalize_transaction(&1, account))
       end)
 
-    # Use the latest transaction date as the next cursor
     next_cursor =
       transactions
       |> Enum.map(& &1.posted_at)
@@ -68,13 +87,20 @@ defmodule Finapp.Sync.SimpleFin do
     {:ok, %{transactions: transactions, next_cursor: next_cursor}}
   end
 
+  defp parse_response(%{body: body}) when is_binary(body) do
+    case Jason.decode(body) do
+      {:ok, decoded} -> parse_response(%{body: decoded})
+      {:error, _} -> {:error, "Invalid JSON from SimpleFIN"}
+    end
+  end
+
   defp normalize_transaction(tx, account) do
-    %{
+    %Transaction{
       external_id: tx["id"],
       account_external_id: account["id"],
       amount: parse_amount(tx["amount"]),
       description: tx["description"] || "",
-      merchant_name: nil,                       # SimpleFIN doesn't provide merchant enrichment
+      merchant_name: nil,
       date: tx["transacted_at"] || tx["posted"],
       posted_at: tx["posted"],
       pending: tx["pending"] == true,
@@ -99,7 +125,5 @@ defmodule Finapp.Sync.SimpleFin do
     end
   end
 
-  defp decrypt_access_url(encrypted_ref) do
-    Vault.decrypt(encrypted_ref)
-  end
+  defp req_plug, do: Application.get_env(:finapp, __MODULE__, [])[:req_plug]
 end
