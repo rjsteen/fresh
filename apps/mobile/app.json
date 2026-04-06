@@ -1,0 +1,28 @@
+{
+  "expo": {
+    "name": "Fresh",
+    "slug": "fresh",
+    "version": "0.1.0",
+    "scheme": "fresh",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "ios": {
+      "bundleIdentifier": "app.fresh.mobile",
+      "supportsTablet": false
+    },
+    "android": {
+      "package": "app.fresh.mobile",
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "data": [{ "scheme": "fresh" }],
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
+      ]
+    },
+    "plugins": ["expo-router", "expo-secure-store"],
+    "extra": {
+      "router": {}
+    }
+  }
+}
