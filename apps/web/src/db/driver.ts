@@ -18,9 +18,10 @@
 import type { Database, SqlJsStatic } from 'sql.js';
 import type { SqliteDriver, QueryResult, DbRow } from '@fresh/core/db';
 
-declare global {
-  function initSqlJs(config?: object): Promise<SqlJsStatic>;
-}
+// sql.js is loaded as a script tag; the global is already typed by @types/sql.js
+// but we access it via window to make the runtime call explicit.
+const _initSqlJs = () =>
+  (window as unknown as { initSqlJs: (cfg?: object) => Promise<SqlJsStatic> }).initSqlJs;
 
 export const OPFS_FILE_NAME = 'fresh.db';
 const DB_KEY_STORAGE = 'fresh_db_key';
@@ -49,7 +50,7 @@ export async function getOrCreateDbKey(): Promise<CryptoKey> {
 
 export async function encryptDb(data: Uint8Array, key: CryptoKey): Promise<Uint8Array> {
   const iv = crypto.getRandomValues(new Uint8Array(12));
-  const encrypted = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, data);
+  const encrypted = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, data as unknown as ArrayBuffer);
   const out = new Uint8Array(12 + encrypted.byteLength);
   out.set(iv, 0);
   out.set(new Uint8Array(encrypted), 12);
@@ -85,7 +86,7 @@ export async function saveToOpfs(data: Uint8Array, key: CryptoKey): Promise<void
   const root = await navigator.storage.getDirectory();
   const fileHandle = await root.getFileHandle(OPFS_FILE_NAME, { create: true });
   const writable = await fileHandle.createWritable();
-  await writable.write(encrypted);
+  await writable.write(encrypted as unknown as ArrayBuffer);
   await writable.close();
 }
 
@@ -108,7 +109,7 @@ export async function writeEncryptedBlobToOpfs(encryptedBlob: ArrayBuffer): Prom
 export async function exportEncryptedBlob(db: Database, key: CryptoKey): Promise<ArrayBuffer> {
   const data = db.export();
   const encrypted = await encryptDb(data, key);
-  return encrypted.buffer;
+  return encrypted.buffer as ArrayBuffer;
 }
 
 // ---------------------------------------------------------------------------
@@ -122,7 +123,7 @@ export class WebSqliteDriver implements SqliteDriver {
 
   static async create(): Promise<WebSqliteDriver> {
     const driver = new WebSqliteDriver();
-    const SQL = await window.initSqlJs({ locateFile: (f: string) => `/sql-wasm/${f}` });
+    const SQL = await _initSqlJs()({ locateFile: (f: string) => `/sql-wasm/${f}` });
 
     driver.key = await getOrCreateDbKey();
     const existing = await loadFromOpfs(driver.key);
@@ -134,7 +135,7 @@ export class WebSqliteDriver implements SqliteDriver {
   /** Re-initialize from an externally provided plaintext Uint8Array (post-cloud hydration). */
   async reinitializeFrom(plaintext: Uint8Array): Promise<void> {
     this.db.close();
-    const SQL = await window.initSqlJs({ locateFile: (f: string) => `/sql-wasm/${f}` });
+    const SQL = await _initSqlJs()({ locateFile: (f: string) => `/sql-wasm/${f}` });
     this.db = new SQL.Database(plaintext);
     await saveToOpfs(plaintext, this.key);
   }
