@@ -5,12 +5,9 @@
  * The backend never receives, stores, or processes any of these values.
  */
 
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 5;
 
 export const CREATE_TABLES_SQL = `
-PRAGMA journal_mode = WAL;
-PRAGMA foreign_keys = ON;
-
 -- Schema version tracking
 CREATE TABLE IF NOT EXISTS schema_versions (
   version    INTEGER PRIMARY KEY,
@@ -159,6 +156,28 @@ export const MIGRATIONS: Record<number, string> = {
   4: `
     ALTER TABLE accounts ADD COLUMN display_order INTEGER NOT NULL DEFAULT 0;
     CREATE INDEX IF NOT EXISTS idx_accounts_order ON accounts(display_order);
+  `,
+
+  5: `
+    -- Tracks every write for delta sync to user cloud storage.
+    -- Triggers populate this automatically (see below).
+    -- 'pushed' is set to 1 after the delta is uploaded to cloud storage.
+    CREATE TABLE IF NOT EXISTS change_log (
+      seq        INTEGER PRIMARY KEY AUTOINCREMENT,
+      changed_at TEXT    NOT NULL DEFAULT (datetime('now')),
+      table_name TEXT    NOT NULL,
+      row_id     TEXT    NOT NULL,
+      operation  TEXT    NOT NULL CHECK(operation IN ('insert','update','delete')),
+      payload    TEXT,
+      pushed     INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE INDEX IF NOT EXISTS idx_change_log_pushed ON change_log(pushed, seq);
+
+    -- Key/value store for sync metadata (cloud cursor, provider, etc.)
+    CREATE TABLE IF NOT EXISTS sync_meta (
+      key   TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );
   `,
 };
 

@@ -1,20 +1,13 @@
 import React, { useState } from 'react';
+import { Link } from 'react-router-dom';
 import styled, { keyframes } from 'styled-components';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:4000';
-
-// ---------------------------------------------------------------------------
-// Animations
-// ---------------------------------------------------------------------------
 
 const fadeUp = keyframes`
   from { opacity: 0; transform: translateY(12px); }
   to   { opacity: 1; transform: translateY(0); }
 `;
-
-// ---------------------------------------------------------------------------
-// Styled components
-// ---------------------------------------------------------------------------
 
 const Page = styled.div`
   min-height: 100vh;
@@ -79,14 +72,27 @@ const Input = styled.input`
   color: ${({ theme }) => theme.color.text};
   font-size: ${({ theme }) => theme.font.size.base};
   transition: ${({ theme }) => theme.transition.fast};
+  box-sizing: border-box;
 
-  &::placeholder {
-    color: ${({ theme }) => theme.color.textMuted};
+  &::placeholder { color: ${({ theme }) => theme.color.textMuted}; }
+  &:hover { border-color: ${({ theme }) => theme.color.green300}; }
+  &:focus {
+    outline: none;
+    border-color: ${({ theme }) => theme.color.green400};
+    box-shadow: ${({ theme }) => theme.shadow.focus};
   }
+`;
 
-  &:hover {
-    border-color: ${({ theme }) => theme.color.green300};
-  }
+const Select = styled.select`
+  width: 100%;
+  padding: ${({ theme }) => `${theme.space[3]} ${theme.space[4]}`};
+  border: 1.5px solid ${({ theme }) => theme.color.border};
+  border-radius: ${({ theme }) => theme.radius.md};
+  background: ${({ theme }) => theme.color.surface};
+  color: ${({ theme }) => theme.color.text};
+  font-size: ${({ theme }) => theme.font.size.base};
+  transition: ${({ theme }) => theme.transition.fast};
+  cursor: pointer;
 
   &:focus {
     outline: none;
@@ -117,17 +123,10 @@ const SubmitButton = styled.button<{ $loading?: boolean }>`
   cursor: ${({ $loading }) => ($loading ? 'not-allowed' : 'pointer')};
   opacity: ${({ $loading }) => ($loading ? 0.7 : 1)};
   transition: ${({ theme }) => theme.transition.fast};
-  letter-spacing: 0.01em;
 
   &:hover:not(:disabled) {
     background: ${({ theme }) => theme.color.green600};
-    box-shadow: ${({ theme }) => theme.shadow.md};
     transform: translateY(-1px);
-  }
-
-  &:active:not(:disabled) {
-    background: ${({ theme }) => theme.color.green700};
-    transform: translateY(0);
   }
 `;
 
@@ -136,16 +135,18 @@ const FooterNote = styled.p`
   text-align: center;
   font-size: ${({ theme }) => theme.font.size.xs};
   color: ${({ theme }) => theme.color.textMuted};
-  line-height: ${({ theme }) => theme.font.lineHeight.relaxed};
+
+  a {
+    color: ${({ theme }) => theme.color.green600};
+    text-decoration: none;
+    &:hover { text-decoration: underline; }
+  }
 `;
 
-// ---------------------------------------------------------------------------
-// Component
-// ---------------------------------------------------------------------------
-
-export function Login() {
+export function Signup() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [region, setRegion] = useState<'us' | 'eu'>('us');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -155,15 +156,15 @@ export function Login() {
     setLoading(true);
 
     try {
-      const resp = await fetch(`${API}/api/v1/auth/login`, {
+      const resp = await fetch(`${API}/api/v1/auth/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ email, password, region }),
       });
 
       if (!resp.ok) {
-        const body = await resp.json();
-        throw new Error(body.error ?? 'Login failed');
+        const body = await resp.json().catch(() => ({}));
+        throw new Error(body.error ?? 'Registration failed');
       }
 
       const { token } = await resp.json();
@@ -175,13 +176,10 @@ export function Login() {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({
-          name: `${navigator.platform} Browser`,
-          platform: 'web',
-        }),
+        body: JSON.stringify({ name: `${navigator.platform} Browser`, platform: 'web' }),
       });
 
-      window.location.href = '/dashboard';
+      window.location.href = '/accounts';
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
@@ -194,7 +192,7 @@ export function Login() {
       <Card>
         <BrandMark>
           <WordMark>Fresh</WordMark>
-          <Tagline>Your financial data never leaves your device.</Tagline>
+          <Tagline>Create your account</Tagline>
         </BrandMark>
 
         <Form onSubmit={handleSubmit}>
@@ -218,21 +216,28 @@ export function Login() {
               placeholder="••••••••"
               onChange={(e) => setPassword(e.target.value)}
               required
-              autoComplete="current-password"
+              autoComplete="new-password"
+              minLength={8}
             />
+          </FieldGroup>
+
+          <FieldGroup>
+            Region
+            <Select value={region} onChange={(e) => setRegion(e.target.value as 'us' | 'eu')}>
+              <option value="us">United States (SimpleFIN)</option>
+              <option value="eu">Europe (GoCardless)</option>
+            </Select>
           </FieldGroup>
 
           {error && <ErrorBanner>{error}</ErrorBanner>}
 
           <SubmitButton type="submit" disabled={loading} $loading={loading}>
-            {loading ? 'Signing in…' : 'Sign in'}
+            {loading ? 'Creating account…' : 'Create account'}
           </SubmitButton>
         </Form>
 
         <FooterNote>
-          Your data is encrypted and stored only on this device.
-          <br />
-          The server never sees your transactions.
+          Already have an account? <Link to="/login">Sign in</Link>
         </FooterNote>
       </Card>
     </Page>

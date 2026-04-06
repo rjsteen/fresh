@@ -7,6 +7,7 @@ export default defineConfig({
     'ml/index': 'src/ml/index.ts',
     'channels/index': 'src/channels/index.ts',
     'budget/index': 'src/budget/index.ts',
+    'cloud/index': 'src/cloud/index.ts',
   },
   format: ['esm', 'cjs'],
   dts: true,

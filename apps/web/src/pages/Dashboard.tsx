@@ -1,189 +1,196 @@
-import React, { useMemo } from 'react';
+import React from 'react';
 import { useQuery } from '@tanstack/react-query';
-import {
-  AreaChart, Area, PieChart, Pie, Cell,
-  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend
-} from 'recharts';
-import { format, startOfMonth, endOfMonth, subMonths } from 'date-fns';
-import {
-  getAccounts,
-  getTransactions,
-  getSpendingByCategory,
-  getBudgetSummary,
-} from '@fresh/core/db';
-import { useDb } from '../App';
+import styled from 'styled-components';
+import { format } from 'date-fns';
 
-const COLORS = ['#6366f1', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#3b82f6'];
+const API = import.meta.env.VITE_API_URL ?? 'http://localhost:4000';
 
-function currency(n: number, curr = 'USD') {
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: curr }).format(n);
+function authHeaders() {
+  return { Authorization: `Bearer ${localStorage.getItem('device_token')}` };
+}
+
+// ---------------------------------------------------------------------------
+// Styled components
+// ---------------------------------------------------------------------------
+
+const Page = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: ${({ theme }) => theme.space[6]};
+  max-width: 860px;
+`;
+
+const PageTitle = styled.h2`
+  font-size: ${({ theme }) => theme.font.size.xl};
+  font-weight: ${({ theme }) => theme.font.weight.bold};
+  color: ${({ theme }) => theme.color.text};
+`;
+
+const CardRow = styled.div`
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: ${({ theme }) => theme.space[4]};
+`;
+
+const Card = styled.div`
+  background: ${({ theme }) => theme.color.surface};
+  border: 1px solid ${({ theme }) => theme.color.border};
+  border-radius: ${({ theme }) => theme.radius.lg};
+  padding: ${({ theme }) => theme.space[5]};
+`;
+
+const CardLabel = styled.div`
+  font-size: ${({ theme }) => theme.font.size.sm};
+  font-weight: ${({ theme }) => theme.font.weight.medium};
+  color: ${({ theme }) => theme.color.textMuted};
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: ${({ theme }) => theme.space[2]};
+`;
+
+const CardValue = styled.div`
+  font-size: ${({ theme }) => theme.font.size['2xl']};
+  font-weight: ${({ theme }) => theme.font.weight.bold};
+  color: ${({ theme }) => theme.color.text};
+  letter-spacing: -0.5px;
+`;
+
+const MobileCallout = styled.div`
+  background: ${({ theme }) => theme.color.green50};
+  border: 1px solid ${({ theme }) => theme.color.green100};
+  border-radius: ${({ theme }) => theme.radius.xl};
+  padding: ${({ theme }) => theme.space[8]};
+  text-align: center;
+`;
+
+const CalloutTitle = styled.h3`
+  font-size: ${({ theme }) => theme.font.size.lg};
+  font-weight: ${({ theme }) => theme.font.weight.semibold};
+  color: ${({ theme }) => theme.color.text};
+  margin-bottom: ${({ theme }) => theme.space[2]};
+`;
+
+const CalloutBody = styled.p`
+  font-size: ${({ theme }) => theme.font.size.base};
+  color: ${({ theme }) => theme.color.textMuted};
+  max-width: 420px;
+  margin: 0 auto;
+  line-height: ${({ theme }) => theme.font.lineHeight.relaxed};
+`;
+
+const SyncTable = styled.table`
+  width: 100%;
+  border-collapse: collapse;
+
+  th {
+    font-size: ${({ theme }) => theme.font.size.xs};
+    font-weight: ${({ theme }) => theme.font.weight.semibold};
+    color: ${({ theme }) => theme.color.textMuted};
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    padding: ${({ theme }) => `${theme.space[2]} ${theme.space[3]}`};
+    text-align: left;
+    border-bottom: 1.5px solid ${({ theme }) => theme.color.border};
+  }
+
+  td {
+    padding: ${({ theme }) => `${theme.space[3]} ${theme.space[3]}`};
+    font-size: ${({ theme }) => theme.font.size.sm};
+    color: ${({ theme }) => theme.color.text};
+    border-bottom: 1px solid ${({ theme }) => theme.color.border};
+  }
+
+  tbody tr:last-child td {
+    border-bottom: none;
+  }
+`;
+
+const StatusBadge = styled.span<{ $status: string }>`
+  display: inline-block;
+  padding: 2px ${({ theme }) => theme.space[2]};
+  border-radius: ${({ theme }) => theme.radius.full};
+  font-size: ${({ theme }) => theme.font.size.xs};
+  font-weight: ${({ theme }) => theme.font.weight.medium};
+  background: ${({ $status, theme }) =>
+    $status === 'active' ? theme.color.green50 : theme.color.dangerBg};
+  color: ${({ $status, theme }) =>
+    $status === 'active' ? theme.color.green700 : theme.color.danger};
+  border: 1px solid ${({ $status, theme }) =>
+    $status === 'active' ? theme.color.green100 : `${theme.color.danger}33`};
+`;
+
+// ---------------------------------------------------------------------------
+// Component
+// ---------------------------------------------------------------------------
+
+interface SyncJob {
+  id: string;
+  connection_type: string;
+  status: string;
+  last_synced_at: string | null;
+  sync_schedule: string;
 }
 
 export function Dashboard() {
-  const db = useDb();
-  const now = new Date();
-  const monthStart = format(startOfMonth(now), 'yyyy-MM-dd');
-  const monthEnd = format(endOfMonth(now), 'yyyy-MM-dd');
-
-  const { data: accounts = [] } = useQuery({
-    queryKey: ['accounts'],
-    queryFn: () => getAccounts(db.raw),
+  const { data: jobs = [], isLoading } = useQuery<SyncJob[]>({
+    queryKey: ['sync-jobs'],
+    queryFn: async () => {
+      const res = await fetch(`${API}/api/v1/sync/jobs`, { headers: authHeaders() });
+      if (!res.ok) throw new Error('Failed to fetch sync jobs');
+      return res.json();
+    },
   });
 
-  const { data: recentTx = [] } = useQuery({
-    queryKey: ['transactions', 'recent'],
-    queryFn: () => getTransactions(db.raw, { limit: 10 }),
-  });
-
-  const { data: spending = [] } = useQuery({
-    queryKey: ['spending', monthStart, monthEnd],
-    queryFn: () => getSpendingByCategory(db.raw, monthStart, monthEnd),
-  });
-
-  const totalBalance = useMemo(
-    () => accounts.reduce((sum, a) => sum + a.current_balance, 0),
-    [accounts]
-  );
-
-  const totalSpend = useMemo(
-    () => spending.reduce((sum, s) => sum + s.total, 0),
-    [spending]
-  );
-
-  // Build daily spend trend for the last 30 days
-  const { data: trendTx = [] } = useQuery({
-    queryKey: ['transactions', 'trend'],
-    queryFn: () =>
-      getTransactions(db.raw, {
-        start_date: format(subMonths(now, 1), 'yyyy-MM-dd'),
-        end_date: format(now, 'yyyy-MM-dd'),
-        limit: 500,
-      }),
-  });
-
-  const trendData = useMemo(() => {
-    const byDay: Record<string, number> = {};
-    for (const tx of trendTx) {
-      if (tx.amount >= 0) continue;
-      byDay[tx.date] = (byDay[tx.date] ?? 0) + Math.abs(tx.amount);
-    }
-    return Object.entries(byDay)
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([date, amount]) => ({ date: format(new Date(date), 'MMM d'), amount }));
-  }, [trendTx]);
+  const activeJobs = jobs.filter((j) => j.status === 'active');
 
   return (
-    <div className="dashboard">
-      {/* Summary cards */}
-      <div className="card-row">
-        <div className="card">
-          <div className="card-label">Net Worth</div>
-          <div className="card-value">{currency(totalBalance)}</div>
-        </div>
-        <div className="card">
-          <div className="card-label">Spent This Month</div>
-          <div className="card-value">{currency(totalSpend)}</div>
-        </div>
-        <div className="card">
-          <div className="card-label">Accounts</div>
-          <div className="card-value">{accounts.length}</div>
-        </div>
-      </div>
+    <Page>
+      <PageTitle>Dashboard</PageTitle>
 
-      <div className="chart-row">
-        {/* Daily spend trend */}
-        <div className="chart-card" style={{ flex: 2 }}>
-          <h3>Daily Spending</h3>
-          <ResponsiveContainer width="100%" height={220}>
-            <AreaChart data={trendData}>
-              <defs>
-                <linearGradient id="spendGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#6366f1" stopOpacity={0.3} />
-                  <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-              <XAxis dataKey="date" tick={{ fontSize: 11 }} />
-              <YAxis tickFormatter={(v) => `$${v}`} tick={{ fontSize: 11 }} />
-              <Tooltip formatter={(v: number) => currency(v)} />
-              <Area
-                type="monotone"
-                dataKey="amount"
-                stroke="#6366f1"
-                fill="url(#spendGrad)"
-                strokeWidth={2}
-              />
-            </AreaChart>
-          </ResponsiveContainer>
-        </div>
+      <CardRow>
+        <Card>
+          <CardLabel>Connected Banks</CardLabel>
+          <CardValue>{isLoading ? '–' : jobs.length}</CardValue>
+        </Card>
+        <Card>
+          <CardLabel>Active Syncs</CardLabel>
+          <CardValue>{isLoading ? '–' : activeJobs.length}</CardValue>
+        </Card>
+      </CardRow>
 
-        {/* Spending by category */}
-        <div className="chart-card" style={{ flex: 1 }}>
-          <h3>By Category</h3>
-          {spending.length === 0 ? (
-            <p className="empty-state">No transactions this month</p>
-          ) : (
-            <ResponsiveContainer width="100%" height={220}>
-              <PieChart>
-                <Pie
-                  data={spending.slice(0, 6)}
-                  dataKey="total"
-                  nameKey="category_name"
-                  cx="50%"
-                  cy="50%"
-                  outerRadius={80}
-                  label={({ name, pct_of_total }) => `${name ?? 'Other'} ${pct_of_total}%`}
-                  labelLine={false}
-                >
-                  {spending.slice(0, 6).map((_, i) => (
-                    <Cell key={i} fill={COLORS[i % COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip formatter={(v: number) => currency(v)} />
-              </PieChart>
-            </ResponsiveContainer>
-          )}
-        </div>
-      </div>
+      <MobileCallout>
+        <CalloutTitle>Your data lives on your device</CalloutTitle>
+        <CalloutBody>
+          Transactions, balances, and budgets are stored in an encrypted database on your phone.
+          Open the Fresh mobile app to view and manage your finances.
+        </CalloutBody>
+      </MobileCallout>
 
-      {/* Recent transactions */}
-      <div className="card" style={{ marginTop: 24 }}>
-        <h3>Recent Transactions</h3>
-        <table className="tx-table">
-          <thead>
-            <tr>
-              <th>Date</th>
-              <th>Description</th>
-              <th>Category</th>
-              <th style={{ textAlign: 'right' }}>Amount</th>
-            </tr>
-          </thead>
-          <tbody>
-            {recentTx.map((tx) => (
-              <tr key={tx.id} className={tx.pending ? 'pending' : ''}>
-                <td>{tx.date}</td>
-                <td>{tx.merchant_name ?? tx.description}</td>
-                <td>{tx.category_id ?? '—'}</td>
-                <td
-                  style={{
-                    textAlign: 'right',
-                    color: tx.amount >= 0 ? '#10b981' : '#f87171',
-                  }}
-                >
-                  {currency(tx.amount)}
-                </td>
-              </tr>
-            ))}
-            {recentTx.length === 0 && (
+      {jobs.length > 0 && (
+        <Card>
+          <CardLabel style={{ marginBottom: '12px' }}>Sync Jobs</CardLabel>
+          <SyncTable>
+            <thead>
               <tr>
-                <td colSpan={4} className="empty-state">
-                  No transactions yet — connect a bank account
-                </td>
+                <th>Provider</th>
+                <th>Status</th>
+                <th>Last Synced</th>
+                <th>Schedule</th>
               </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-    </div>
+            </thead>
+            <tbody>
+              {jobs.map((job) => (
+                <tr key={job.id}>
+                  <td>{job.connection_type === 'gocardless' ? 'GoCardless' : 'SimpleFIN'}</td>
+                  <td><StatusBadge $status={job.status}>{job.status}</StatusBadge></td>
+                  <td>{job.last_synced_at ? format(new Date(job.last_synced_at), 'MMM d, h:mm a') : '—'}</td>
+                  <td style={{ fontFamily: 'monospace', fontSize: '12px' }}>{job.sync_schedule}</td>
+                </tr>
+              ))}
+            </tbody>
+          </SyncTable>
+        </Card>
+      )}
+    </Page>
   );
 }
