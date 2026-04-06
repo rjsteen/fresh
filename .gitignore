@@ -35,3 +35,6 @@ lcov.info
 *.db
 *.db-shm
 *.db-wal
+
+# Claude
+.claude/
