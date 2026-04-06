@@ -1,15 +1,15 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import styled from 'styled-components';
+import { format } from 'date-fns';
+import { useDb } from '../App';
+import { getAccounts } from '@fresh/core/db';
+import type { Account } from '@fresh/core/db';
+import { useFinanceSocket } from '@fresh/core/channels';
+import { useAuth } from '../hooks/useAuth';
+import { apiFetch, API } from '../utils/api';
 
-const API = import.meta.env.VITE_API_URL ?? 'http://localhost:4000';
-
-function authHeaders() {
-  return {
-    'Content-Type': 'application/json',
-    Authorization: `Bearer ${localStorage.getItem('device_token')}`,
-  };
-}
+const WS_URL = API.replace(/^http/, 'ws') + '/socket';
 
 // ---------------------------------------------------------------------------
 // Styled components
@@ -40,6 +40,130 @@ const SectionTitle = styled.h3`
   font-weight: ${({ theme }) => theme.font.weight.semibold};
   color: ${({ theme }) => theme.color.text};
   margin-bottom: ${({ theme }) => theme.space[4]};
+`;
+
+const AccountList = styled.ul`
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: ${({ theme }) => theme.space[3]};
+`;
+
+const AccountCard = styled.li`
+  display: flex;
+  flex-direction: column;
+  gap: ${({ theme }) => theme.space[2]};
+  padding: ${({ theme }) => theme.space[4]};
+  border: 1px solid ${({ theme }) => theme.color.border};
+  border-radius: ${({ theme }) => theme.radius.lg};
+  background: ${({ theme }) => theme.color.bg};
+`;
+
+const AccountHeader = styled.div`
+  display: flex;
+  align-items: center;
+  gap: ${({ theme }) => theme.space[2]};
+`;
+
+const AccountName = styled.span`
+  font-size: ${({ theme }) => theme.font.size.base};
+  font-weight: ${({ theme }) => theme.font.weight.semibold};
+  color: ${({ theme }) => theme.color.text};
+  flex: 1;
+`;
+
+const TypeBadge = styled.span`
+  display: inline-block;
+  padding: 2px ${({ theme }) => theme.space[2]};
+  background: ${({ theme }) => theme.color.green50};
+  border: 1px solid ${({ theme }) => theme.color.green100};
+  border-radius: ${({ theme }) => theme.radius.full};
+  font-size: ${({ theme }) => theme.font.size.xs};
+  color: ${({ theme }) => theme.color.green700};
+  font-weight: ${({ theme }) => theme.font.weight.medium};
+  text-transform: capitalize;
+`;
+
+const SyncBadge = styled.span<{ $status: 'idle' | 'syncing' | 'error' }>`
+  display: inline-block;
+  padding: 2px ${({ theme }) => theme.space[2]};
+  border-radius: ${({ theme }) => theme.radius.full};
+  font-size: ${({ theme }) => theme.font.size.xs};
+  font-weight: ${({ theme }) => theme.font.weight.medium};
+  border: 1px solid;
+
+  ${({ $status, theme }) => {
+    if ($status === 'syncing') return `
+      background: ${theme.color.green50};
+      border-color: ${theme.color.green100};
+      color: ${theme.color.green700};
+    `;
+    if ($status === 'error') return `
+      background: ${theme.color.dangerBg};
+      border-color: ${theme.color.danger}33;
+      color: ${theme.color.danger};
+    `;
+    return `
+      background: transparent;
+      border-color: ${theme.color.border};
+      color: ${theme.color.textMuted};
+    `;
+  }}
+`;
+
+const AccountBalance = styled.div`
+  font-size: ${({ theme }) => theme.font.size['2xl']};
+  font-weight: ${({ theme }) => theme.font.weight.bold};
+  color: ${({ theme }) => theme.color.text};
+  letter-spacing: -0.5px;
+`;
+
+const AccountMeta = styled.div`
+  font-size: ${({ theme }) => theme.font.size.xs};
+  color: ${({ theme }) => theme.color.textMuted};
+`;
+
+const AccountFooter = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: ${({ theme }) => theme.space[2]};
+  margin-top: ${({ theme }) => theme.space[1]};
+`;
+
+const SyncNowButton = styled.button`
+  font-size: ${({ theme }) => theme.font.size.sm};
+  color: ${({ theme }) => theme.color.green700};
+  background: ${({ theme }) => theme.color.green50};
+  border: 1px solid ${({ theme }) => theme.color.green100};
+  border-radius: ${({ theme }) => theme.radius.sm};
+  padding: ${({ theme }) => `${theme.space[1]} ${theme.space[3]}`};
+  cursor: pointer;
+  transition: ${({ theme }) => theme.transition.fast};
+
+  &:hover:not(:disabled) {
+    background: ${({ theme }) => theme.color.green100};
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+`;
+
+const RemoveButton = styled.button`
+  font-size: ${({ theme }) => theme.font.size.sm};
+  color: ${({ theme }) => theme.color.danger};
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: ${({ theme }) => `${theme.space[1]} ${theme.space[2]}`};
+  border-radius: ${({ theme }) => theme.radius.sm};
+  transition: ${({ theme }) => theme.transition.fast};
+
+  &:hover {
+    background: ${({ theme }) => theme.color.dangerBg};
+  }
 `;
 
 const ProviderGrid = styled.div`
@@ -182,60 +306,12 @@ const SuccessBanner = styled.div`
   font-size: ${({ theme }) => theme.font.size.sm};
 `;
 
-const ConnectionList = styled.ul`
-  list-style: none;
-  display: flex;
-  flex-direction: column;
-  gap: ${({ theme }) => theme.space[3]};
-`;
-
-const ConnectionItem = styled.li`
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: ${({ theme }) => theme.space[4]};
-  border: 1px solid ${({ theme }) => theme.color.border};
-  border-radius: ${({ theme }) => theme.radius.lg};
-  background: ${({ theme }) => theme.color.bg};
-`;
-
-const ConnectionInfo = styled.div`
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-`;
-
-const ConnectionName = styled.span`
-  font-size: ${({ theme }) => theme.font.size.base};
-  font-weight: ${({ theme }) => theme.font.weight.medium};
-  color: ${({ theme }) => theme.color.text};
-`;
-
-const ConnectionMeta = styled.span`
-  font-size: ${({ theme }) => theme.font.size.xs};
-  color: ${({ theme }) => theme.color.textMuted};
-`;
-
-const DisconnectButton = styled.button`
-  font-size: ${({ theme }) => theme.font.size.sm};
-  color: ${({ theme }) => theme.color.danger};
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  padding: ${({ theme }) => `${theme.space[1]} ${theme.space[2]}`};
-  border-radius: ${({ theme }) => theme.radius.sm};
-  transition: ${({ theme }) => theme.transition.fast};
-
-  &:hover {
-    background: ${({ theme }) => theme.color.dangerBg};
-  }
-`;
-
 // ---------------------------------------------------------------------------
-// Component
+// Types
 // ---------------------------------------------------------------------------
 
 type Panel = null | 'simplefin' | 'gocardless';
+type SyncStatus = 'idle' | 'syncing' | 'error';
 
 interface SyncJob {
   id: string;
@@ -244,55 +320,163 @@ interface SyncJob {
   account_token_ref: string;
 }
 
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function formatBalance(amount: number, currency: string): string {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency,
+    minimumFractionDigits: 2,
+  }).format(amount);
+}
+
+function formatLastSynced(iso: string | null): string {
+  if (!iso) return 'Never synced';
+  try {
+    return 'Synced ' + format(new Date(iso), 'MMM d, h:mm a');
+  } catch {
+    return 'Synced recently';
+  }
+}
+
+function normalizeSyncStatus(jobStatus: string): SyncStatus {
+  if (jobStatus === 'syncing' || jobStatus === 'running') return 'syncing';
+  if (jobStatus === 'error' || jobStatus === 'failed') return 'error';
+  return 'idle';
+}
+
+// ---------------------------------------------------------------------------
+// Component
+// ---------------------------------------------------------------------------
+
 export function Accounts() {
+  const db = useDb();
+  const { token } = useAuth();
   const qc = useQueryClient();
+
   const [panel, setPanel] = useState<Panel>(null);
-  const [token, setToken] = useState('');
+  const [setupToken, setSetupToken] = useState('');
   const [institutionId, setInstitutionId] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [syncStatusOverride, setSyncStatusOverride] = useState<Record<string, SyncStatus>>({});
 
-  const { data: connections = [] } = useQuery<SyncJob[]>({
+  // Accounts from on-device SQLite
+  const { data: accounts = [], refetch: refetchAccounts } = useQuery<Account[]>({
+    queryKey: ['accounts'],
+    queryFn: () => getAccounts(db.raw),
+  });
+
+  // Sync jobs from backend — used for job IDs, initial status, and sync triggering
+  const { data: syncJobs = [] } = useQuery<SyncJob[]>({
     queryKey: ['sync-jobs'],
     queryFn: async () => {
-      const res = await fetch(`${API}/api/v1/sync/jobs`, { headers: authHeaders() });
-      if (!res.ok) throw new Error('Failed to fetch connections');
+      const res = await apiFetch(`${API}/api/v1/sync/jobs`);
+      if (!res.ok) throw new Error('Failed to fetch sync jobs');
       return res.json();
     },
   });
 
+  // O(1) lookup: sync_token_ref → SyncJob
+  const syncJobsByRef = useMemo(
+    () => new Map(syncJobs.map((j) => [j.account_token_ref, j])),
+    [syncJobs],
+  );
+
+  // Real-time sync status from Phoenix channel
+  useFinanceSocket({
+    url: WS_URL,
+    deviceToken: token,
+    onSyncComplete: ({ account_token_ref }) => {
+      setSyncStatusOverride((prev) => ({ ...prev, [account_token_ref]: 'idle' }));
+      refetchAccounts();
+      qc.invalidateQueries({ queryKey: ['sync-jobs'] });
+    },
+    onSyncError: ({ account_token_ref }) => {
+      setSyncStatusOverride((prev) => ({ ...prev, [account_token_ref]: 'error' }));
+    },
+  });
+
+  function getStatusForAccount(account: Account): SyncStatus {
+    if (account.sync_token_ref) {
+      const override = syncStatusOverride[account.sync_token_ref];
+      if (override) return override;
+      const job = syncJobsByRef.get(account.sync_token_ref);
+      if (job) return normalizeSyncStatus(job.status);
+    }
+    return 'idle';
+  }
+
+  const triggerSyncMutation = useMutation({
+    mutationFn: async (jobId: string) => {
+      const res = await apiFetch(`${API}/api/v1/sync/${jobId}/trigger`, { method: 'POST' });
+      if (!res.ok) throw new Error('Failed to trigger sync');
+    },
+    onMutate: (jobId) => {
+      const job = syncJobs.find((j) => j.id === jobId);
+      if (job) {
+        setSyncStatusOverride((prev) => ({ ...prev, [job.account_token_ref]: 'syncing' }));
+      }
+    },
+    onError: (e: Error, jobId) => {
+      const job = syncJobs.find((j) => j.id === jobId);
+      if (job) {
+        setSyncStatusOverride((prev) => ({ ...prev, [job.account_token_ref]: 'idle' }));
+      }
+      setError(e.message);
+    },
+  });
+
+  const removeMutation = useMutation({
+    mutationFn: async ({ accountId, jobId }: { accountId: string; jobId?: string }) => {
+      if (jobId) {
+        const res = await apiFetch(`${API}/api/v1/connections/${jobId}`, { method: 'DELETE' });
+        if (!res.ok) throw new Error('Failed to remove connection');
+      }
+      await db.raw.execute('DELETE FROM accounts WHERE id = ?', [accountId]);
+    },
+    onSuccess: () => {
+      refetchAccounts();
+      qc.invalidateQueries({ queryKey: ['sync-jobs'] });
+    },
+    onError: (e: Error) => setError(e.message),
+  });
+
   const simplefinMutation = useMutation({
-    mutationFn: async (setupToken: string) => {
-      const res = await fetch(`${API}/api/v1/connections/simplefin/claim`, {
+    mutationFn: async (token: string) => {
+      const res = await apiFetch(`${API}/api/v1/connections/simplefin/claim`, {
         method: 'POST',
-        headers: authHeaders(),
-        body: JSON.stringify({ setup_token: setupToken }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ setup_token: token }),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
-        throw new Error(body.error ?? 'Failed to connect');
+        throw new Error((body as { error?: string }).error ?? 'Failed to connect');
       }
       return res.json();
     },
     onSuccess: () => {
       setSuccess('SimpleFIN account connected. Your device will sync shortly.');
       setPanel(null);
-      setToken('');
+      setSetupToken('');
       qc.invalidateQueries({ queryKey: ['sync-jobs'] });
+      refetchAccounts();
     },
     onError: (e: Error) => setError(e.message),
   });
 
   const gocardlessMutation = useMutation({
     mutationFn: async (instId: string) => {
-      const res = await fetch(`${API}/api/v1/connections/gocardless/requisition`, {
+      const res = await apiFetch(`${API}/api/v1/connections/gocardless/requisition`, {
         method: 'POST',
-        headers: authHeaders(),
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ institution_id: instId }),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
-        throw new Error(body.error ?? 'Failed to create requisition');
+        throw new Error((body as { error?: string }).error ?? 'Failed to create requisition');
       }
       return res.json() as Promise<{ link: string }>;
     },
@@ -302,46 +486,60 @@ export function Accounts() {
     onError: (e: Error) => setError(e.message),
   });
 
-  const disconnectMutation = useMutation({
-    mutationFn: async (id: string) => {
-      const res = await fetch(`${API}/api/v1/connections/${id}`, {
-        method: 'DELETE',
-        headers: authHeaders(),
-      });
-      if (!res.ok) throw new Error('Failed to disconnect');
-    },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['sync-jobs'] }),
-  });
-
   return (
     <Page>
       <PageTitle>Accounts</PageTitle>
 
       {success && <SuccessBanner>{success}</SuccessBanner>}
 
-      {/* Existing connections */}
-      {connections.length > 0 && (
+      {accounts.length > 0 && (
         <Card>
-          <SectionTitle>Connected banks</SectionTitle>
-          <ConnectionList>
-            {connections.map((c) => (
-              <ConnectionItem key={c.id}>
-                <ConnectionInfo>
-                  <ConnectionName>
-                    {c.connection_type === 'gocardless' ? 'GoCardless' : 'SimpleFIN'}
-                  </ConnectionName>
-                  <ConnectionMeta>{c.status}</ConnectionMeta>
-                </ConnectionInfo>
-                <DisconnectButton onClick={() => disconnectMutation.mutate(c.id)}>
-                  Disconnect
-                </DisconnectButton>
-              </ConnectionItem>
-            ))}
-          </ConnectionList>
+          <SectionTitle>Your accounts</SectionTitle>
+          <AccountList>
+            {accounts.map((account) => {
+              const status = getStatusForAccount(account);
+              const syncJob = account.sync_token_ref
+                ? syncJobsByRef.get(account.sync_token_ref)
+                : undefined;
+              return (
+                <AccountCard key={account.id}>
+                  <AccountHeader>
+                    <AccountName>{account.name}</AccountName>
+                    <TypeBadge>{account.type}</TypeBadge>
+                    <SyncBadge $status={status}>
+                      {status === 'syncing' ? 'Syncing…' : status === 'error' ? 'Error' : 'Idle'}
+                    </SyncBadge>
+                  </AccountHeader>
+                  <AccountBalance>
+                    {formatBalance(account.current_balance, account.currency)}
+                  </AccountBalance>
+                  <AccountMeta>{formatLastSynced(account.last_synced_at)}</AccountMeta>
+                  <AccountFooter>
+                    {syncJob && (
+                      <SyncNowButton
+                        disabled={status === 'syncing' || triggerSyncMutation.isPending}
+                        onClick={() => triggerSyncMutation.mutate(syncJob.id)}
+                      >
+                        {status === 'syncing' ? 'Syncing…' : 'Sync now'}
+                      </SyncNowButton>
+                    )}
+                    <RemoveButton
+                      onClick={() =>
+                        removeMutation.mutate({ accountId: account.id, jobId: syncJob?.id })
+                      }
+                    >
+                      Remove
+                    </RemoveButton>
+                  </AccountFooter>
+                </AccountCard>
+              );
+            })}
+          </AccountList>
         </Card>
       )}
 
-      {/* Add connection */}
+      {error && <ErrorBanner>{error}</ErrorBanner>}
+
       <Card>
         <SectionTitle>Connect a bank</SectionTitle>
 
@@ -379,20 +577,20 @@ export function Accounts() {
                 id="sf-token"
                 type="text"
                 placeholder="Paste your SimpleFIN setup token"
-                value={token}
-                onChange={(e) => setToken(e.target.value)}
+                value={setupToken}
+                onChange={(e) => setSetupToken(e.target.value)}
               />
             </InputRow>
             {error && <ErrorBanner style={{ marginTop: '12px' }}>{error}</ErrorBanner>}
             <ButtonRow>
               <PrimaryButton
                 $loading={simplefinMutation.isPending}
-                disabled={simplefinMutation.isPending || !token.trim()}
-                onClick={() => simplefinMutation.mutate(token.trim())}
+                disabled={simplefinMutation.isPending || !setupToken.trim()}
+                onClick={() => simplefinMutation.mutate(setupToken.trim())}
               >
                 {simplefinMutation.isPending ? 'Connecting…' : 'Connect'}
               </PrimaryButton>
-              <GhostButton onClick={() => { setPanel(null); setError(null); setToken(''); }}>
+              <GhostButton onClick={() => { setPanel(null); setError(null); setSetupToken(''); }}>
                 Cancel
               </GhostButton>
             </ButtonRow>
@@ -402,7 +600,7 @@ export function Accounts() {
         {panel === 'gocardless' && (
           <>
             <p style={{ marginBottom: '16px', fontSize: '14px', color: 'var(--text-muted)' }}>
-              Enter your bank's GoCardless institution ID. You'll be redirected to authorize access.
+              Enter your bank&apos;s GoCardless institution ID. You&apos;ll be redirected to authorize access.
             </p>
             <InputRow>
               <Label htmlFor="gc-institution">Institution ID</Label>
