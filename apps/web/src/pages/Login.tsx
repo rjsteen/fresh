@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Link } from 'react-router-dom';
 import styled, { keyframes } from 'styled-components';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:4000';
@@ -230,9 +231,9 @@ export function Login() {
         </Form>
 
         <FooterNote>
-          Your data is encrypted and stored only on this device.
+          Don't have an account? <Link to="/signup">Sign up</Link>
           <br />
-          The server never sees your transactions.
+          Your data is encrypted and stored only on this device.
         </FooterNote>
       </Card>
     </Page>
