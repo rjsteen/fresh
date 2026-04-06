@@ -124,10 +124,42 @@ const Content = styled.main`
 `;
 
 // ---------------------------------------------------------------------------
+// Model version check — runs on mount for authenticated users
+// ---------------------------------------------------------------------------
+
+type ModelEntry = { model_type: string; version: string; cdn_url: string; checksum: string };
+
+function useModelVersionCheck() {
+  useEffect(() => {
+    const token = localStorage.getItem('device_token');
+    if (!token) return;
+
+    fetch('/api/v1/models/current', {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((r) => r.json())
+      .then(({ models }: { models: ModelEntry[] }) => {
+        for (const model of models) {
+          const cachedVersion = localStorage.getItem(`model_version_${model.model_type}`);
+          if (cachedVersion !== model.version) {
+            // Prefetch new weights so they land in the HTTP cache before the
+            // ONNX runtime needs them. Non-blocking — failures are silent.
+            fetch(model.cdn_url, { cache: 'force-cache' }).catch(() => {});
+            localStorage.setItem(`model_version_${model.model_type}`, model.version);
+          }
+        }
+      })
+      .catch(() => {});
+  }, []);
+}
+
+// ---------------------------------------------------------------------------
 // Authenticated shell — includes local DB
 // ---------------------------------------------------------------------------
 
 function AuthenticatedShell({ db }: { db: DbClient }) {
+  useModelVersionCheck();
+
   return (
     <DbContext.Provider value={db}>
       <AppShell>

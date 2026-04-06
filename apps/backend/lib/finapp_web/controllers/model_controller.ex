@@ -48,7 +48,9 @@ defmodule FinappWeb.ModelController do
   end
 
   def current_versions(conn, _params) do
-    versions =
+    cdn_base = Application.get_env(:finapp, :cdn_base_url, "")
+
+    rows =
       Repo.all(
         from mv in "model_versions",
           where: mv.is_current == true,
@@ -56,9 +58,15 @@ defmodule FinappWeb.ModelController do
             model_type: mv.model_type,
             version: mv.version,
             cdn_path: mv.cdn_path,
-            checksum_sha256: mv.checksum_sha256
+            checksum: mv.checksum_sha256
           }
       )
+
+    versions =
+      Enum.map(rows, fn row ->
+        %{model_type: row.model_type, version: row.version,
+          cdn_url: "#{cdn_base}/#{row.cdn_path}", checksum: row.checksum}
+      end)
 
     json(conn, %{models: versions})
   end
