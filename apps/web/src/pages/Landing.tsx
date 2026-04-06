@@ -1,4 +1,3 @@
-import React from 'react';
 import { Link } from 'react-router-dom';
 import styled, { keyframes } from 'styled-components';
 
@@ -70,7 +69,7 @@ const Hero = styled.section`
   align-items: center;
   justify-content: center;
   text-align: center;
-  padding: ${({ theme }) => `${theme.space[24]} ${theme.space[6]}`};
+  padding: ${({ theme }) => `96px ${theme.space[6]}`};
   gap: ${({ theme }) => theme.space[6]};
   animation: ${fadeUp} 0.4s ease both;
 `;
@@ -112,7 +111,7 @@ const PrimaryButton = styled(Link)`
   font-weight: ${({ theme }) => theme.font.weight.semibold};
   color: ${({ theme }) => theme.color.textInvert};
   background: ${({ theme }) => theme.color.green500};
-  padding: ${({ theme }) => `${theme.space[3]} ${theme.space[7]}`};
+  padding: ${({ theme }) => `${theme.space[3]} ${theme.space[8]}`};
   border-radius: ${({ theme }) => theme.radius.md};
   text-decoration: none;
   transition: ${({ theme }) => theme.transition.fast};
