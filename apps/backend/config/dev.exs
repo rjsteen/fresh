@@ -46,6 +46,7 @@ config :finapp, :gocardless,
 
 # ML sidecar
 config :finapp, :ml_sidecar_url, "http://localhost:8001"
+config :finapp, :sidecar_token, "dev-sidecar-token"
 
 # CDN base for model weight distribution
 config :finapp, :cdn_base_url, "http://localhost:9000/finapp-models"
