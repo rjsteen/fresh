@@ -231,7 +231,7 @@ export function Login() {
         </Form>
 
         <FooterNote>
-          Don't have an account? <Link to="/signup">Sign up</Link>
+          Don't have an account? <Link to="/register">Sign up</Link>
           <br />
           Your data is encrypted and stored only on this device.
         </FooterNote>

@@ -15,6 +15,7 @@ import { Budget } from './pages/Budget';
 import { Settings } from './pages/Settings';
 import { Login } from './pages/Login';
 import { Signup } from './pages/Signup';
+import { Register } from './pages/Register';
 import { Landing } from './pages/Landing';
 
 // ---------------------------------------------------------------------------
@@ -222,7 +223,8 @@ export default function App() {
             {/* Public routes */}
             <Route path="/"       element={token ? <Navigate to="/dashboard" replace /> : <Landing />} />
             <Route path="/login"  element={token ? <Navigate to="/dashboard" replace /> : <Login />} />
-            <Route path="/signup" element={token ? <Navigate to="/dashboard" replace /> : <Signup />} />
+            <Route path="/signup"    element={token ? <Navigate to="/dashboard" replace /> : <Signup />} />
+            <Route path="/register" element={token ? <Navigate to="/dashboard" replace /> : <Register />} />
 
             {/* Authenticated routes */}
             <Route
