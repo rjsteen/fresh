@@ -192,7 +192,7 @@ export function Landing() {
         <WordMark>Fresh</WordMark>
         <NavActions>
           <NavLink to="/login">Sign in</NavLink>
-          <NavCta to="/login">Get started</NavCta>
+          <NavCta to="/signup">Get started</NavCta>
         </NavActions>
       </Nav>
 
@@ -204,7 +204,7 @@ export function Landing() {
           data ever reaches our servers.
         </Sub>
         <Actions>
-          <PrimaryButton to="/login">Get started</PrimaryButton>
+          <PrimaryButton to="/signup">Get started</PrimaryButton>
           <SecondaryButton to="/login">Sign in →</SecondaryButton>
         </Actions>
       </Hero>

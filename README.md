@@ -6,6 +6,14 @@ The server knows you exist. It does not know what you spend.
 
 ---
 
+## Architecture
+
+![Storage and sync strategy](docs/strategy.svg)
+
+**Mobile** is the source of truth. The encrypted SQLite file lives on the user's device and optionally backs up to their own cloud storage (Dropbox, iCloud Drive, or Google Drive) — Fresh servers never touch it. The **web app** is a convenience view: on first load it pulls the full encrypted blob from cloud storage into OPFS, then syncs deltas on subsequent visits. The **Phoenix backend** handles bank polling, push relay, and ML model distribution only — it cannot leak financial data because it never stores any.
+
+---
+
 ## How it works
 
 ```

@@ -30,6 +30,11 @@
       "import": "./dist/budget/index.mjs",
       "require": "./dist/budget/index.js",
       "types": "./dist/budget/index.d.ts"
+    },
+    "./cloud": {
+      "import": "./dist/cloud/index.mjs",
+      "require": "./dist/cloud/index.js",
+      "types": "./dist/cloud/index.d.ts"
     }
   },
   "scripts": {

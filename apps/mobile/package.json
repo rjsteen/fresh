@@ -16,7 +16,7 @@
     "@fresh/core": "workspace:*",
     "expo": "~52.0.0",
     "expo-router": "~4.0.0",
-    "expo-sqlite": "~14.0.0",
+    "@op-engineering/op-sqlite": "^11.0.0",
     "expo-secure-store": "~13.0.0",
     "expo-crypto": "~13.0.0",
     "expo-file-system": "~17.0.0",
