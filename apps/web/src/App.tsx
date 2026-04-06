@@ -7,7 +7,8 @@ import { DbClient } from '@fresh/core/db';
 import { theme } from './theme';
 import GlobalStyle from './GlobalStyle';
 import { initDb } from './store/db';
-import { authHeaders } from './utils/api';
+import { apiFetch } from './utils/api';
+import { AuthProvider, useAuth } from './hooks/useAuth';
 import { Dashboard } from './pages/Dashboard';
 import { Accounts } from './pages/Accounts';
 import { Transactions } from './pages/Transactions';
@@ -135,17 +136,12 @@ function useModelVersionCheck() {
   useEffect(() => {
     const controller = new AbortController();
 
-    fetch('/api/v1/models/current', {
-      headers: authHeaders(),
-      signal: controller.signal,
-    })
+    apiFetch('/api/v1/models/current', { signal: controller.signal })
       .then((r) => r.json())
       .then(({ models }: { models: ModelEntry[] }) => {
         for (const model of models) {
           const cachedVersion = localStorage.getItem(`model_version_${model.model_type}`);
           if (cachedVersion !== model.version) {
-            // Prefetch new weights so they land in the HTTP cache before the
-            // ONNX runtime needs them. Non-blocking — failures are silent.
             fetch(model.cdn_url, { cache: 'force-cache' }).catch(() => {});
             localStorage.setItem(`model_version_${model.model_type}`, model.version);
           }
@@ -199,49 +195,65 @@ function AuthenticatedShell({ db }: { db: DbClient }) {
 }
 
 // ---------------------------------------------------------------------------
+// App routes — consumes AuthProvider, handles DB init
+// ---------------------------------------------------------------------------
+
+function AppRoutes() {
+  const { isAuthenticated } = useAuth();
+  const [db, setDb] = useState<DbClient | null>(null);
+  const [initError, setInitError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setDb(null);
+      setInitError(null);
+      return;
+    }
+    initDb()
+      .then(setDb)
+      .catch((err: Error) => setInitError(err.message));
+  }, [isAuthenticated]);
+
+  return (
+    <Routes>
+      {/* Public routes */}
+      <Route path="/"        element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <Landing />} />
+      <Route path="/login"   element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <Login />} />
+      <Route path="/signup"  element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <Signup />} />
+      <Route path="/register" element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <Register />} />
+
+      {/* Protected routes */}
+      <Route
+        path="/*"
+        element={
+          !isAuthenticated ? (
+            <Navigate to="/login" replace />
+          ) : initError ? (
+            <ErrorScreen>Failed to initialize local database: {initError}</ErrorScreen>
+          ) : !db ? (
+            <SplashScreen>Loading your data…</SplashScreen>
+          ) : (
+            <AuthenticatedShell db={db} />
+          )
+        }
+      />
+    </Routes>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Root
 // ---------------------------------------------------------------------------
 
 export default function App() {
-  const [db, setDb] = useState<DbClient | null>(null);
-  const [initError, setInitError] = useState<string | null>(null);
-  const token = localStorage.getItem('device_token');
-
-  useEffect(() => {
-    if (!token) return; // don't init DB until logged in
-    initDb()
-      .then(setDb)
-      .catch((err) => setInitError(err.message));
-  }, [token]);
-
   return (
     <ThemeProvider theme={theme}>
       <GlobalStyle />
       <QueryClientProvider client={queryClient}>
         <BrowserRouter>
-          <Routes>
-            {/* Public routes */}
-            <Route path="/"       element={token ? <Navigate to="/dashboard" replace /> : <Landing />} />
-            <Route path="/login"  element={token ? <Navigate to="/dashboard" replace /> : <Login />} />
-            <Route path="/signup"    element={token ? <Navigate to="/dashboard" replace /> : <Signup />} />
-            <Route path="/register" element={token ? <Navigate to="/dashboard" replace /> : <Register />} />
-
-            {/* Authenticated routes */}
-            <Route
-              path="/*"
-              element={
-                !token ? (
-                  <Navigate to="/" replace />
-                ) : initError ? (
-                  <ErrorScreen>Failed to initialize local database: {initError}</ErrorScreen>
-                ) : !db ? (
-                  <SplashScreen>Loading your data…</SplashScreen>
-                ) : (
-                  <AuthenticatedShell db={db} />
-                )
-              }
-            />
-          </Routes>
+          <AuthProvider>
+            <AppRoutes />
+          </AuthProvider>
         </BrowserRouter>
       </QueryClientProvider>
     </ThemeProvider>

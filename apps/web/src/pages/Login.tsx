@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import styled, { keyframes } from 'styled-components';
-
-const API = import.meta.env.VITE_API_URL ?? 'http://localhost:4000';
+import { API } from '../utils/api';
+import { useAuth } from '../hooks/useAuth';
 
 // ---------------------------------------------------------------------------
 // Animations
@@ -145,6 +145,8 @@ const FooterNote = styled.p`
 // ---------------------------------------------------------------------------
 
 export function Login() {
+  const { storeToken } = useAuth();
+  const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -168,7 +170,7 @@ export function Login() {
       }
 
       const { token } = await resp.json();
-      localStorage.setItem('device_token', token);
+      storeToken(token, email);
 
       await fetch(`${API}/api/v1/devices`, {
         method: 'POST',
@@ -182,7 +184,7 @@ export function Login() {
         }),
       });
 
-      window.location.href = '/dashboard';
+      navigate('/dashboard', { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
