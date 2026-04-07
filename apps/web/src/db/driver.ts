@@ -128,6 +128,8 @@ export class WebSqliteDriver implements SqliteDriver {
     driver.key = await getOrCreateDbKey();
     const existing = await loadFromOpfs(driver.key);
     driver.db = new SQL.Database(existing ?? undefined);
+    // Enable FK enforcement so ON DELETE CASCADE / ON DELETE RESTRICT fire correctly
+    driver.db.run('PRAGMA foreign_keys = ON');
 
     return driver;
   }
