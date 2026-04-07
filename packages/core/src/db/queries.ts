@@ -250,6 +250,21 @@ export async function getEnabledAlertRules(db: SqliteDriver): Promise<AlertRule[
   }));
 }
 
+export async function getAllAlertRules(db: SqliteDriver): Promise<AlertRule[]> {
+  const rows = await db.query<any>(
+    `SELECT * FROM alert_rules ORDER BY created_at ASC`
+  );
+  return rows.map((r) => ({
+    ...r,
+    enabled: r.enabled === 1,
+    params: JSON.parse(r.params),
+  }));
+}
+
+export async function deleteAlertRule(db: SqliteDriver, id: string): Promise<void> {
+  await db.execute('DELETE FROM alert_rules WHERE id = ?', [id]);
+}
+
 export async function upsertAlertRule(
   db: SqliteDriver,
   rule: Omit<AlertRule, 'id' | 'created_at' | 'updated_at'> & { id?: string }
