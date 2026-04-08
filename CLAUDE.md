@@ -41,6 +41,15 @@ All three must pass — zero type errors, zero lint errors, zero failing tests.
 
 ### Backend (apps/backend — Elixir/Phoenix)
 
+**Prerequisite:** postgres and redis must be running before `mix test`.
+The quickest way to ensure this:
+
+```bash
+docker compose up -d --wait postgres redis
+```
+
+Then:
+
 ```bash
 cd apps/backend
 
@@ -49,6 +58,14 @@ mix test             # unit + integration tests (auto-migrates test DB)
 ```
 
 Both must pass before any backend change is considered done.
+
+### Running everything at once
+
+```bash
+bin/test             # starts containers if needed, then runs backend + frontend checks
+bin/test --backend   # backend only
+bin/test --frontend  # frontend only
+```
 
 ---
 

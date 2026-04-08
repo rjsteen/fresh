@@ -75,7 +75,7 @@ export async function loadFromOpfs(key: CryptoKey): Promise<Uint8Array | null> {
     const file = await fileHandle.getFile();
     const encrypted = new Uint8Array(await file.arrayBuffer());
     if (encrypted.length === 0) return null;
-    return decryptDb(encrypted, key);
+    return await decryptDb(encrypted, key);
   } catch {
     return null;
   }

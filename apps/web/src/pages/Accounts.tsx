@@ -375,7 +375,8 @@ export function Accounts() {
     queryFn: async () => {
       const res = await apiFetch(`${API}/api/v1/sync/jobs`);
       if (!res.ok) throw new Error('Failed to fetch sync jobs');
-      return res.json();
+      const body = await res.json();
+      return body.jobs ?? [];
     },
   });
 

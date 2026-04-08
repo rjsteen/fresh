@@ -23,13 +23,16 @@ export async function initDb(
 ): Promise<DbClient> {
   if (dbClientSingleton) return dbClientSingleton;
 
+  console.log('[initDb] creating driver…');
   const driver = await WebSqliteDriver.create();
+  console.log('[initDb] driver ready, running cloud hydration…');
   const client = new DbClient(driver);
 
   // Attempt cloud hydration before running migrations so that a freshly
   // pulled full file already has the correct schema.
   const sync = new CloudSyncManager(driver, cloudAdapter);
   const status = await sync.hydrate();
+  console.log('[initDb] hydration status:', status);
 
   if (status === 'hydrated') {
     // Full file was pulled — reinitialize driver from the decrypted blob.
@@ -41,7 +44,9 @@ export async function initDb(
     }
   }
 
+  console.log('[initDb] running migrations…');
   await client.runMigrations();
+  console.log('[initDb] done');
 
   sync.startDeltaPush(30_000);
   syncManagerSingleton = sync;
