@@ -12,6 +12,7 @@ export interface UseFinanceSocketOptions {
   onAlertTriggered?: (payload: AlertTriggeredPayload) => void;
   onModelUpdated?: (payload: ModelUpdatedPayload) => void;
   onSyncError?: (payload: { account_token_ref: string; reason: string }) => void;
+  onAccountDeleted?: () => void;
 }
 
 export function useFinanceSocket(opts: UseFinanceSocketOptions) {
@@ -50,6 +51,7 @@ export function useFinanceSocket(opts: UseFinanceSocketOptions) {
       socket.on<{ account_token_ref: string; reason: string }>('sync:error', (p) =>
         stableOpts.current.onSyncError?.(p)
       ),
+      socket.on('account:deleted', () => stableOpts.current.onAccountDeleted?.()),
     ];
 
     return () => {

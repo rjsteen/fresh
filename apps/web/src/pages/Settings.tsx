@@ -499,6 +499,48 @@ const CheckboxRow = styled.label`
   cursor: pointer;
 `;
 
+const ModalOverlay = styled.div`
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+`;
+
+const ModalCard = styled.div`
+  background: ${({ theme }) => theme.color.surface};
+  border: 1px solid ${({ theme }) => theme.color.border};
+  border-radius: ${({ theme }) => theme.radius.xl};
+  padding: ${({ theme }) => theme.space[6]};
+  width: 100%;
+  max-width: 420px;
+  display: flex;
+  flex-direction: column;
+  gap: ${({ theme }) => theme.space[4]};
+  box-shadow: ${({ theme }) => theme.shadow.lg};
+`;
+
+const ModalTitle = styled.h3`
+  font-size: ${({ theme }) => theme.font.size.md};
+  font-weight: ${({ theme }) => theme.font.weight.semibold};
+  color: ${({ theme }) => theme.color.text};
+  margin: 0;
+`;
+
+const ModalBody = styled.p`
+  font-size: ${({ theme }) => theme.font.size.sm};
+  color: ${({ theme }) => theme.color.textSub};
+  margin: 0;
+`;
+
+const ModalActions = styled.div`
+  display: flex;
+  gap: ${({ theme }) => theme.space[3]};
+  justify-content: flex-end;
+`;
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -643,6 +685,11 @@ export function Settings() {
   // ---- data section state ----
   const [dataBanner, setDataBanner] = useState<{ msg: string; ok: boolean } | null>(null);
 
+  // ---- delete account modal state ----
+  const [deleteModal, setDeleteModal] = useState(false);
+  const [deletePassword, setDeletePassword] = useState('');
+  const [deletePasswordError, setDeletePasswordError] = useState<string | null>(null);
+
   // ---- queries ----
   const { data: rules = [] } = useQuery({
     queryKey: ['alert_rules', 'all'],
@@ -772,13 +819,23 @@ export function Settings() {
   });
 
   const deleteAccount = useMutation({
-    mutationFn: async () => {
-      const res = await apiFetch(`${API}/api/v1/users/me`, { method: 'DELETE' });
+    mutationFn: async (password: string) => {
+      const res = await apiFetch(`${API}/api/v1/users/me`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password }),
+      });
+      if (res.status === 401) throw new Error('invalid_password');
       if (!res.ok) throw new Error('Failed to delete account');
     },
     onSuccess: async () => {
       await wipeLocalDb();
       logout();
+    },
+    onError: (err: Error) => {
+      if (err.message === 'invalid_password') {
+        setDeletePasswordError('Incorrect password. Please try again.');
+      }
     },
   });
 
@@ -882,13 +939,21 @@ export function Settings() {
   }
 
   function handleDeleteAccount() {
-    if (
-      !window.confirm(
-        'Permanently delete your account and all local data? This cannot be undone.'
-      )
-    )
-      return;
-    deleteAccount.mutate();
+    setDeletePassword('');
+    setDeletePasswordError(null);
+    setDeleteModal(true);
+  }
+
+  function handleConfirmDelete() {
+    if (!deletePassword) return;
+    deleteAccount.mutate(deletePassword);
+  }
+
+  function handleCancelDelete() {
+    setDeleteModal(false);
+    setDeletePassword('');
+    setDeletePasswordError(null);
+    deleteAccount.reset();
   }
 
   // ---- render helpers ----
@@ -1323,10 +1388,49 @@ export function Settings() {
           </DangerButton>
         </Row>
 
-        {deleteAccount.isError && (
-          <Banner $variant="error">Failed to delete account. Please try again.</Banner>
-        )}
       </Card>
+
+      {deleteModal && (
+        <ModalOverlay>
+          <ModalCard data-testid="delete-account-modal">
+            <ModalTitle>Delete account</ModalTitle>
+            <ModalBody>
+              This will permanently delete your account and all synced data. Enter your password to confirm.
+            </ModalBody>
+            <InputGroup>
+              <Label htmlFor="delete-password">Password</Label>
+              <Input
+                id="delete-password"
+                type="password"
+                value={deletePassword}
+                onChange={(e) => {
+                  setDeletePassword(e.target.value);
+                  setDeletePasswordError(null);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleConfirmDelete();
+                }}
+                autoFocus
+              />
+              {deletePasswordError && <ErrorText>{deletePasswordError}</ErrorText>}
+              {deleteAccount.isError && !deletePasswordError && (
+                <ErrorText>Failed to delete account. Please try again.</ErrorText>
+              )}
+            </InputGroup>
+            <ModalActions>
+              <GhostButton onClick={handleCancelDelete} disabled={deleteAccount.isPending}>
+                Cancel
+              </GhostButton>
+              <DangerButton
+                onClick={handleConfirmDelete}
+                disabled={!deletePassword || deleteAccount.isPending}
+              >
+                {deleteAccount.isPending ? 'Deleting…' : 'Delete account'}
+              </DangerButton>
+            </ModalActions>
+          </ModalCard>
+        </ModalOverlay>
+      )}
     </Page>
   );
 }

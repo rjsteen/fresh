@@ -85,6 +85,12 @@ defmodule FinappWeb.DeviceChannel do
     {:noreply, socket}
   end
 
+  @impl true
+  def handle_info({:account_deleted, _payload}, socket) do
+    push(socket, "account:deleted", %{})
+    {:noreply, socket}
+  end
+
   defp touch_device(socket) do
     user_id = socket.assigns.current_user_id
     # Fire and forget — don't block the join on a DB write
