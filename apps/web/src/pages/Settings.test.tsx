@@ -3,7 +3,7 @@
  * Backend API calls (devices, profile PATCH, account DELETE) are stubbed via
  * vi.stubGlobal('fetch', …) / vi.spyOn since they cross the network boundary.
  */
-import { screen, waitFor } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { vi, type Mock } from 'vitest';
 import { Settings } from './Settings';
@@ -549,14 +549,23 @@ describe('Settings — danger zone', () => {
     expect(logoutFn).toHaveBeenCalledOnce();
   });
 
-  it('calls DELETE /api/v1/users/me and then logout when delete is confirmed', async () => {
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
+  it('opens a password modal when Delete account is clicked', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<Settings />);
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /delete account/i })).toBeInTheDocument()
+    );
+    await user.click(screen.getByRole('button', { name: /delete account/i }));
+    expect(screen.getByLabelText(/^password$/i)).toBeInTheDocument();
+  });
+
+  it('calls DELETE /api/v1/users/me with password and then logout when confirmed', async () => {
     const logoutFn = vi.fn();
     (useAuth as Mock).mockReturnValue({ logout: logoutFn });
 
     mockFetch
       .mockResolvedValueOnce({ ok: true, json: async () => [] }) // devices
-      .mockResolvedValueOnce({ ok: true, json: async () => null }); // DELETE /users/me
+      .mockResolvedValueOnce({ ok: true, status: 204, json: async () => null }); // DELETE /users/me
 
     const user = userEvent.setup();
     renderWithProviders(<Settings />);
@@ -564,6 +573,10 @@ describe('Settings — danger zone', () => {
       expect(screen.getByRole('button', { name: /delete account/i })).toBeInTheDocument()
     );
     await user.click(screen.getByRole('button', { name: /delete account/i }));
+
+    const modal = await screen.findByTestId('delete-account-modal');
+    await user.type(within(modal).getByLabelText(/^password$/i), 'mypassword');
+    await user.click(within(modal).getByRole('button', { name: /^delete account$/i }));
 
     await waitFor(() => {
       const deleteCall = mockFetch.mock.calls.find(
@@ -573,12 +586,34 @@ describe('Settings — danger zone', () => {
           (c[1] as RequestInit).method === 'DELETE'
       );
       expect(deleteCall).toBeTruthy();
+      const body = JSON.parse((deleteCall![1] as RequestInit).body as string);
+      expect(body.password).toBe('mypassword');
       expect(logoutFn).toHaveBeenCalledOnce();
     });
   });
 
-  it('does not call DELETE when confirm is cancelled', async () => {
-    vi.spyOn(window, 'confirm').mockReturnValue(false);
+  it('shows an error when wrong password is entered', async () => {
+    mockFetch
+      .mockResolvedValueOnce({ ok: true, json: async () => [] }) // devices
+      .mockResolvedValueOnce({ ok: false, status: 401, json: async () => ({ error: 'invalid_password' }) });
+
+    const user = userEvent.setup();
+    renderWithProviders(<Settings />);
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /delete account/i })).toBeInTheDocument()
+    );
+    await user.click(screen.getByRole('button', { name: /delete account/i }));
+
+    const modal = await screen.findByTestId('delete-account-modal');
+    await user.type(within(modal).getByLabelText(/^password$/i), 'wrongpass');
+    await user.click(within(modal).getByRole('button', { name: /^delete account$/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/incorrect password/i)).toBeInTheDocument();
+    });
+  });
+
+  it('does not call DELETE when modal is cancelled', async () => {
     mockFetch.mockResolvedValue({ ok: true, json: async () => [] });
     const user = userEvent.setup();
     renderWithProviders(<Settings />);
@@ -586,6 +621,10 @@ describe('Settings — danger zone', () => {
       expect(screen.getByRole('button', { name: /delete account/i })).toBeInTheDocument()
     );
     await user.click(screen.getByRole('button', { name: /delete account/i }));
+
+    const modal = await screen.findByTestId('delete-account-modal');
+    await user.click(within(modal).getByRole('button', { name: /cancel/i }));
+
     const deleteCall = mockFetch.mock.calls.find(
       (c: unknown[]) =>
         typeof c[0] === 'string' &&

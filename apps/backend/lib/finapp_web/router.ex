@@ -35,6 +35,9 @@ defmodule FinappWeb.Router do
   scope "/api/v1", FinappWeb do
     pipe_through [:api, :authenticated]
 
+    # Account management
+    delete "/users/me", UserController, :delete
+
     # Device management
     post "/devices", DeviceController, :register
     delete "/devices/:id", DeviceController, :deregister

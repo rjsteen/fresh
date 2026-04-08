@@ -15,6 +15,7 @@ export type SignalEvent =
   | 'alert:triggered'       // An alert rule fired (identified by opaque token_ref)
   | 'model:updated'         // New ONNX model weights available on CDN
   | 'rules:updated'         // New categorization rules available on CDN
+  | 'account:deleted'       // User account was deleted — device should wipe local DB and log out
   | 'presence_state'        // Phoenix Presence state
   | 'presence_diff';        // Phoenix Presence diff
 

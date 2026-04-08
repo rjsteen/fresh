@@ -3,6 +3,15 @@ defmodule Finapp.Accounts do
   alias Finapp.Repo
   alias Finapp.Accounts.{User, Device}
 
+  def delete_user(%User{} = user, password) do
+    if Bcrypt.verify_pass(password, user.password_hash) do
+      Phoenix.PubSub.broadcast(Finapp.PubSub, "user:#{user.id}", {:account_deleted, %{}})
+      Repo.delete(user)
+    else
+      {:error, :invalid_password}
+    end
+  end
+
   def get_user(id), do: Repo.get(User, id)
 
   def get_device_by_user(user_id) do
