@@ -209,9 +209,20 @@ function AppRoutes() {
       setInitError(null);
       return;
     }
+    const timeout = setTimeout(() => {
+      setInitError('Database took too long to initialize. Check the browser console for details.');
+    }, 15_000);
+
     initDb()
-      .then(setDb)
-      .catch((err: Error) => setInitError(err.message));
+      .then((client) => { clearTimeout(timeout); setDb(client); })
+      .catch((err: unknown) => {
+        clearTimeout(timeout);
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error('[initDb] failed:', err);
+        setInitError(msg || 'Unknown error initializing database');
+      });
+
+    return () => clearTimeout(timeout);
   }, [isAuthenticated]);
 
   return (

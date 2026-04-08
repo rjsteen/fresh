@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+# bin/test — run the full test suite against local infrastructure containers.
+#
+# Usage:
+#   bin/test              # run everything
+#   bin/test --backend    # backend only
+#   bin/test --frontend   # frontend only
+#
+# Starts postgres + redis via Docker Compose if they are not already healthy,
+# then runs backend (Elixir) and frontend (TypeScript/Vitest) checks.
+# Safe to run multiple times — already-running containers are left as-is.
+
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+GREEN='\033[0;32m'; RED='\033[0;31m'; YELLOW='\033[1;33m'; BOLD='\033[1m'; NC='\033[0m'
+
+step() { echo -e "\n${BOLD}${YELLOW}▶  $1${NC}"; }
+ok()   { echo -e "${GREEN}✓  $1${NC}"; }
+fail() { echo -e "${RED}✗  $1${NC}"; exit 1; }
+
+RUN_BACKEND=true
+RUN_FRONTEND=true
+
+for arg in "$@"; do
+  case $arg in
+    --backend)  RUN_FRONTEND=false ;;
+    --frontend) RUN_BACKEND=false  ;;
+    *) echo "Unknown option: $arg"; echo "Usage: bin/test [--backend|--frontend]"; exit 1 ;;
+  esac
+done
+
+# ---------------------------------------------------------------------------
+# Infrastructure — postgres + redis
+# ---------------------------------------------------------------------------
+
+step "Infrastructure"
+
+if ! command -v docker &>/dev/null; then
+  fail "Docker not found. Install Docker Desktop: https://www.docker.com/products/docker-desktop/"
+fi
+
+# --wait blocks until all healthchecks pass (requires Compose v2.1+)
+docker compose up -d --wait postgres redis
+ok "postgres + redis healthy"
+
+# ---------------------------------------------------------------------------
+# Backend
+# ---------------------------------------------------------------------------
+
+if $RUN_BACKEND; then
+  step "Backend — mix test"
+  (cd apps/backend && mix test) || fail "Backend tests failed"
+  ok "Backend tests passed"
+fi
+
+# ---------------------------------------------------------------------------
+# Frontend
+# ---------------------------------------------------------------------------
+
+if $RUN_FRONTEND; then
+  step "Frontend — type-check"
+  pnpm --filter @fresh/core type-check || fail "@fresh/core type-check failed"
+  pnpm --filter @fresh/web  type-check || fail "@fresh/web type-check failed"
+  ok "Type-check passed"
+
+  step "Frontend — tests"
+  pnpm --filter @fresh/web test        || fail "@fresh/web tests failed"
+  ok "Frontend tests passed"
+fi
+
+# ---------------------------------------------------------------------------
+
+echo -e "\n${BOLD}${GREEN}All checks passed.${NC}"

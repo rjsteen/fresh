@@ -14,6 +14,15 @@ defmodule FinappWeb.Endpoint do
     pass: ["*/*"],
     json_decoder: Phoenix.json_library()
 
+  plug Corsica,
+    origins: [
+      "https://app.fresh.app",
+      ~r/^http:\/\/localhost:\d+$/
+    ],
+    allow_credentials: true,
+    allow_headers: ["authorization", "content-type", "x-device-id"],
+    max_age: 600
+
   plug Plug.MethodOverride
   plug Plug.Head
   plug FinappWeb.Router

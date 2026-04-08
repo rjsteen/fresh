@@ -168,14 +168,53 @@ pnpm turbo run dev
 
 | Command | Description |
 |---|---|
-| `docker compose up` | Start all backend services |
-| `docker compose down` | Stop all services |
+| `docker compose up` | Start all services (Postgres, Redis, Phoenix, MinIO, ML sidecar) |
+| `docker compose up -d postgres redis` | Start infrastructure only (for local backend dev) |
+| `docker compose down` | Stop all services, keep volumes |
+| `docker compose down -v` | Stop all services and wipe volumes |
 | `pnpm install` | Install all JS dependencies |
 | `pnpm --filter @fresh/core build` | Build shared core package |
 | `pnpm turbo run build` | Build all packages |
 | `pnpm turbo run dev` | Start all dev servers in watch mode |
-| `pnpm turbo run test` | Run all tests |
+| `pnpm turbo run test` | Run all frontend tests |
 | `pnpm turbo run type-check` | Type-check all packages |
+| `bin/test` | Run the full test suite (starts containers if needed) |
+
+### Running tests
+
+There are two ways to run the backend test suite:
+
+**Option A — everything in Docker (simpler)**
+
+```sh
+docker compose up       # starts all services including the Phoenix backend
+docker compose exec backend mix test
+```
+
+**Option B — backend running locally, infrastructure in Docker (faster iteration)**
+
+```sh
+docker compose up -d --wait postgres redis   # starts only postgres + redis
+cd apps/backend
+mix test
+```
+
+`mix test` automatically creates and migrates the `finapp_test` database on each run — no manual migration step needed. The `finapp_test` database is separate from `finapp_dev` so running tests never clobbers your local dev data.
+
+For frontend tests no containers are needed:
+
+```sh
+pnpm --filter @fresh/web test
+pnpm --filter @fresh/web type-check
+```
+
+**`bin/test` — run everything at once**
+
+```sh
+bin/test             # starts containers if needed, runs backend + frontend
+bin/test --backend   # backend only
+bin/test --frontend  # frontend only
+```
 
 ### Backend (Elixir) — via Docker
 
@@ -193,6 +232,12 @@ docker compose exec backend iex -S mix
 ### MinIO console
 
 Visit **http://localhost:9001** (credentials: `minioadmin` / `minioadmin`) to inspect model weight storage.
+
+---
+
+## Debugging
+
+See [docs/debugging.md](docs/debugging.md) for a full reference covering logs, CORS, database connections, pool exhaustion, and common error patterns.
 
 ---
 

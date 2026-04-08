@@ -52,6 +52,9 @@ services:
       CDN_BASE_URL: "http://minio:9000/finapp-models"
       PHX_HOST: "localhost"
       PORT: "4000"
+      # Oban queues (bank_sync:10 + notifications:20 + model_dist:2) plus web
+      # requests all share the Repo pool — keep this above the sum of queue limits.
+      POOL_SIZE: "40"
       MIX_ENV: "dev"
     depends_on:
       postgres:

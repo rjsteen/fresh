@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import styled, { keyframes } from 'styled-components';
 import { z } from 'zod';
+import { useAuth } from '../hooks/useAuth';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:4000';
 
@@ -248,6 +249,8 @@ const FooterNote = styled.p`
 // ---------------------------------------------------------------------------
 
 export function Register() {
+  const { storeToken } = useAuth();
+  const navigate = useNavigate();
   const [fields, setFields] = useState<RegisterFields>({
     email: '',
     password: '',
@@ -297,14 +300,30 @@ export function Register() {
 
       if (!resp.ok) {
         const body = await resp.json().catch(() => ({}));
-        // Surface field-level errors from the server (e.g. "email has already been taken")
         if (body.errors && typeof body.errors === 'object') {
+          const knownFields = new Set<string>([
+            'email', 'password', 'confirmPassword', 'region', 'timezone',
+          ]);
           const serverFieldErrors: FieldErrors = {};
+          const orphanMessages: string[] = [];
+
           for (const [k, msgs] of Object.entries(body.errors)) {
-            const key = k as keyof RegisterFields;
-            serverFieldErrors[key] = Array.isArray(msgs) ? msgs[0] : String(msgs);
+            const msg = Array.isArray(msgs) ? msgs[0] : String(msgs);
+            if (knownFields.has(k)) {
+              serverFieldErrors[k as keyof RegisterFields] = msg;
+            } else {
+              orphanMessages.push(`${k} ${msg}`);
+            }
           }
+
           setFieldErrors(serverFieldErrors);
+          // Always show a banner so there is visible top-level feedback, even
+          // when the errors are only inline under fields.
+          setServerError(
+            orphanMessages.length > 0
+              ? orphanMessages.join('. ')
+              : 'Please correct the errors below.'
+          );
         } else {
           throw new Error(body.error ?? 'Registration failed');
         }
@@ -312,7 +331,7 @@ export function Register() {
       }
 
       const { token } = await resp.json();
-      localStorage.setItem('device_token', token);
+      storeToken(token, fields.email);
 
       await fetch(`${API}/api/v1/devices`, {
         method: 'POST',
@@ -326,7 +345,7 @@ export function Register() {
         }),
       });
 
-      window.location.href = '/dashboard';
+      navigate('/dashboard', { replace: true });
     } catch (err) {
       setServerError(err instanceof Error ? err.message : 'Unknown error');
     } finally {

@@ -131,7 +131,8 @@ export function Dashboard() {
     queryFn: async () => {
       const res = await fetch(`${API}/api/v1/sync/jobs`, { headers: authHeaders() });
       if (!res.ok) throw new Error('Failed to fetch sync jobs');
-      return res.json();
+      const body = await res.json();
+      return body.jobs ?? [];
     },
   });
 

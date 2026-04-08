@@ -6,13 +6,6 @@ defmodule FinappWeb.Router do
 
   pipeline :api do
     plug :accepts, ["json"]
-    plug Corsica,
-      origins: [
-        "https://app.fresh.app",
-        ~r/^http:\/\/localhost:\d+$/
-      ],
-      allow_credentials: true,
-      allow_headers: ["authorization", "content-type", "x-device-id"]
     plug FinappWeb.Plugs.RateLimiter
   end
 
