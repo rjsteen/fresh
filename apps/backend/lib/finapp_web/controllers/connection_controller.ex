@@ -1,8 +1,8 @@
 defmodule FinappWeb.ConnectionController do
   use Phoenix.Controller, formats: [:json]
 
-  alias Finapp.{Repo, Vault, Sync}
-  alias Finapp.Sync.{SimpleFin, GoCardless, SyncJob}
+  alias Finapp.{Repo, Sync, Vault}
+  alias Finapp.Sync.{GoCardless, SimpleFin, SyncJob}
   alias Guardian.Plug
 
   # POST /api/v1/connections/simplefin/claim
@@ -37,14 +37,14 @@ defmodule FinappWeb.ConnectionController do
     user = Plug.current_resource(conn)
     reference = "#{user.id}-#{System.system_time(:millisecond)}"
 
-    with {:ok, result} <-
-           GoCardless.create_requisition(
-             params["institution_id"],
-             params["redirect_url"],
-             reference
-           ) do
-      json(conn, %{link: result.link, requisition_id: result.id})
-    else
+    case GoCardless.create_requisition(
+           params["institution_id"],
+           params["redirect_url"],
+           reference
+         ) do
+      {:ok, result} ->
+        json(conn, %{link: result.link, requisition_id: result.id})
+
       {:error, reason} ->
         conn
         |> put_status(:unprocessable_entity)

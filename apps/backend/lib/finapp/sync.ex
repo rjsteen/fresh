@@ -1,7 +1,9 @@
 defmodule Finapp.Sync do
+  @moduledoc false
+
   import Ecto.Query
   alias Finapp.Repo
-  alias Finapp.Sync.SyncJob
+  alias Finapp.Sync.{BankSyncWorker, SyncJob}
 
   def ack_sync(account_token_ref, user_id) do
     Repo.one(
@@ -28,7 +30,7 @@ defmodule Finapp.Sync do
 
   def trigger_sync(job) do
     %{sync_job_id: job.id}
-    |> Finapp.Sync.BankSyncWorker.new()
+    |> BankSyncWorker.new()
     |> Oban.insert()
   end
 

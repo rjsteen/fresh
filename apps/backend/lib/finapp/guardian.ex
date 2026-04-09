@@ -1,4 +1,6 @@
 defmodule Finapp.Guardian do
+  @moduledoc false
+
   use Guardian, otp_app: :finapp
 
   alias Finapp.Accounts.User

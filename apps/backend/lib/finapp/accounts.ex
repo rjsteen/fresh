@@ -1,7 +1,9 @@
 defmodule Finapp.Accounts do
+  @moduledoc false
+
   import Ecto.Query
+  alias Finapp.Accounts.{Device, User}
   alias Finapp.Repo
-  alias Finapp.Accounts.{User, Device}
 
   def delete_user(%User{} = user, password) do
     if Bcrypt.verify_pass(password, user.password_hash) do

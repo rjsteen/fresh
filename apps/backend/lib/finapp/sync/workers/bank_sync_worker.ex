@@ -16,8 +16,8 @@ defmodule Finapp.Sync.BankSyncWorker do
     max_attempts: 5,
     priority: 1
 
-  alias Finapp.Sync.{SimpleFin, GoCardless, SyncJob}
   alias Finapp.Repo
+  alias Finapp.Sync.{GoCardless, SimpleFin, SyncJob}
 
   @impl Oban.Worker
   def perform(%Oban.Job{args: %{"sync_job_id" => sync_job_id}}) do

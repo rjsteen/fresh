@@ -23,9 +23,8 @@ defmodule Finapp.Sync.SimpleFin do
   """
   def claim_access_url(setup_token) do
     with {:ok, claim_url} <- decode_setup_token(setup_token),
-         {:ok, resp} <- do_req_post(claim_url, body: ""),
-         {:ok, encrypted} <- Vault.encrypt(resp.body) do
-      {:ok, encrypted}
+         {:ok, resp} <- do_req_post(claim_url, body: "") do
+      Vault.encrypt(resp.body)
     end
   end
 

@@ -1,8 +1,8 @@
 defmodule FinappWeb.DeviceController do
   use Phoenix.Controller, formats: [:json]
 
-  alias Finapp.Repo
   alias Finapp.Accounts.Device
+  alias Finapp.Repo
   alias Guardian.Plug
 
   def register(conn, params) do

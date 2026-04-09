@@ -198,7 +198,7 @@ export class NativeSqliteDriver implements SqliteDriver {
 
   async query<T = DbRow>(sql: string, params: (string | number | null)[] = []): Promise<T[]> {
     const result = await this.db.execute(sql, params);
-    return (result.rows?._array ?? []) as T[];
+    return (result.rows ?? []) as T[];
   }
 
   async transaction(fn: (tx: SqliteDriver) => Promise<void>): Promise<void> {
