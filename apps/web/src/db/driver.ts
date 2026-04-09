@@ -248,6 +248,7 @@ export class WebSqliteDriver implements SqliteDriver {
 
   async execute(sql: string, params: (string | number | null)[] = []): Promise<QueryResult> {
     const stmt = this.db.prepare(sql);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- sql.js BindParams type doesn't accept (string|number|null)[]
     stmt.run(params as any);
     const rowsAffected = this.db.getRowsModified();
     const lastInsertId = Number(
@@ -260,6 +261,7 @@ export class WebSqliteDriver implements SqliteDriver {
 
   async query<T = DbRow>(sql: string, params: (string | number | null)[] = []): Promise<T[]> {
     const stmt = this.db.prepare(sql);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- sql.js BindParams type doesn't accept (string|number|null)[]
     stmt.bind(params as any);
     const rows: T[] = [];
     while (stmt.step()) {

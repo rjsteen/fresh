@@ -200,6 +200,7 @@ export interface Account {
   connection_type: ConnectionType;
   sync_token_ref: string | null;
   is_active: boolean;
+  display_order?: number;
   created_at: string;
   updated_at: string;
 }

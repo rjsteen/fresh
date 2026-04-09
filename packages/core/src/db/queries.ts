@@ -5,7 +5,7 @@
 
 import { v4 as uuidv4 } from 'uuid';
 import type { SqliteDriver } from './client';
-import type { Account, Transaction, Category, Budget, BudgetLine, AlertRule } from './schema';
+import type { Account, Transaction, AlertRule } from './schema';
 
 // ---------------------------------------------------------------------------
 // Accounts
@@ -50,7 +50,7 @@ export async function upsertAccount(
       account.connection_type,
       account.sync_token_ref ?? null,
       account.is_active ? 1 : 0,
-      (account as any).display_order ?? 0,
+      account.display_order ?? 0,
     ]
   );
   const rows = await db.query<Account>('SELECT * FROM accounts WHERE id = ?', [id]);
@@ -109,7 +109,8 @@ export async function getTransactions(
   const limit = filters.limit ?? 50;
   const offset = filters.offset ?? 0;
 
-  const rows = await db.query<any>(
+  type TransactionRow = Omit<Transaction, 'pending' | 'tags'> & { pending: 0 | 1; tags_json: string | null };
+  const rows = await db.query<TransactionRow>(
     `SELECT t.*, json(t.tags) as tags_json
      FROM transactions t
      ${where}
@@ -240,7 +241,8 @@ export async function getBudgetSummary(
 // ---------------------------------------------------------------------------
 
 export async function getEnabledAlertRules(db: SqliteDriver): Promise<AlertRule[]> {
-  const rows = await db.query<any>(
+  type AlertRuleRow = Omit<AlertRule, 'params' | 'enabled'> & { params: string; enabled: 0 | 1 };
+  const rows = await db.query<AlertRuleRow>(
     `SELECT * FROM alert_rules WHERE enabled = 1 ORDER BY created_at ASC`
   );
   return rows.map((r) => ({
@@ -251,7 +253,8 @@ export async function getEnabledAlertRules(db: SqliteDriver): Promise<AlertRule[
 }
 
 export async function getAllAlertRules(db: SqliteDriver): Promise<AlertRule[]> {
-  const rows = await db.query<any>(
+  type AlertRuleRow = Omit<AlertRule, 'params' | 'enabled'> & { params: string; enabled: 0 | 1 };
+  const rows = await db.query<AlertRuleRow>(
     `SELECT * FROM alert_rules ORDER BY created_at ASC`
   );
   return rows.map((r) => ({
@@ -287,7 +290,8 @@ export async function upsertAlertRule(
       rule.backend_token_ref ?? null,
     ]
   );
-  const rows = await db.query<any>('SELECT * FROM alert_rules WHERE id = ?', [id]);
+  type AlertRuleRow = Omit<AlertRule, 'params' | 'enabled'> & { params: string; enabled: 0 | 1 };
+  const rows = await db.query<AlertRuleRow>('SELECT * FROM alert_rules WHERE id = ?', [id]);
   const r = rows[0];
   return { ...r, enabled: r.enabled === 1, params: JSON.parse(r.params) };
 }
