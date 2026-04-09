@@ -7,9 +7,21 @@
  *   - Subsequent loads: open from OPFS, pull deltas from cloud.
  *   - On writes: log to change_log, push deltas on a timer.
  *
- * Encryption: AES-256-GCM via SubtleCrypto. The key never leaves the device
- * (stored in localStorage, should be migrated to IndexedDB in production).
- * The same encrypted blob is safe to store in user-owned cloud storage.
+ * ## Key derivation & storage
+ *
+ * A 256-bit AES-GCM key is generated once per device via `crypto.subtle.generateKey`
+ * and stored as a non-extractable `CryptoKey` object in IndexedDB (origin-scoped,
+ * persistent across sessions). The key never leaves the device as raw bytes.
+ *
+ * On first run after upgrading from an older app version that stored the key as
+ * raw base64 in `localStorage`, `getOrCreateDbKey` automatically migrates the key
+ * into IDB and clears the old localStorage entry.
+ *
+ * ## Encrypted-at-rest migration
+ *
+ * Older app versions wrote a plaintext SQLite file to OPFS. On first open,
+ * `loadFromOpfs` detects the SQLite magic header, re-encrypts the file in place,
+ * and returns the plaintext bytes for this session.
  *
  * sql.js is loaded as a global script tag (sql-wasm-browser.js) to avoid
  * Vite ESM/WASM interop issues.
@@ -24,23 +36,83 @@ const _initSqlJs = () =>
   (window as unknown as { initSqlJs: (cfg?: object) => Promise<SqlJsStatic> }).initSqlJs;
 
 export const OPFS_FILE_NAME = 'fresh.db';
-const DB_KEY_STORAGE = 'fresh_db_key';
+
+// ---------------------------------------------------------------------------
+// IDB key store
+// ---------------------------------------------------------------------------
+
+const IDB_NAME = 'fresh-keys';
+const IDB_STORE = 'keys';
+const IDB_KEY_NAME = 'db-key';
+/** localStorage key used by pre-IDB versions — kept only for the migration path. */
+const LEGACY_LS_KEY = 'fresh_db_key';
+
+function openKeyStore(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(IDB_NAME, 1);
+    req.onupgradeneeded = () => req.result.createObjectStore(IDB_STORE);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function loadKeyFromIDB(): Promise<CryptoKey | null> {
+  const idb = await openKeyStore();
+  return new Promise((resolve, reject) => {
+    const tx = idb.transaction(IDB_STORE, 'readonly');
+    const req = tx.objectStore(IDB_STORE).get(IDB_KEY_NAME);
+    req.onsuccess = () => { resolve((req.result as CryptoKey | undefined) ?? null); idb.close(); };
+    req.onerror = () => { reject(req.error); idb.close(); };
+  });
+}
+
+async function storeKeyInIDB(key: CryptoKey): Promise<void> {
+  const idb = await openKeyStore();
+  return new Promise((resolve, reject) => {
+    const tx = idb.transaction(IDB_STORE, 'readwrite');
+    const req = tx.objectStore(IDB_STORE).put(key, IDB_KEY_NAME);
+    req.onsuccess = () => { resolve(); idb.close(); };
+    req.onerror = () => { reject(req.error); idb.close(); };
+  });
+}
 
 // ---------------------------------------------------------------------------
 // Key management
 // ---------------------------------------------------------------------------
 
+/**
+ * Returns the AES-256-GCM device key, creating it on first run.
+ *
+ * Resolution order:
+ *   1. IDB (non-extractable CryptoKey object — preferred)
+ *   2. Legacy localStorage migration (old app versions stored raw key bytes)
+ *   3. Generate a fresh non-extractable key and persist it to IDB
+ */
 export async function getOrCreateDbKey(): Promise<CryptoKey> {
-  const stored = localStorage.getItem(DB_KEY_STORAGE);
+  const idbKey = await loadKeyFromIDB();
+  if (idbKey) return idbKey;
+
+  // Migrate from legacy localStorage: re-import raw bytes as non-extractable
+  // so they no longer live in JS-readable storage.
+  const stored = localStorage.getItem(LEGACY_LS_KEY);
   if (stored) {
     const raw = Uint8Array.from(atob(stored), (c) => c.charCodeAt(0));
-    return crypto.subtle.importKey('raw', raw, { name: 'AES-GCM' }, true, ['encrypt', 'decrypt']);
+    const key = await crypto.subtle.importKey('raw', raw, { name: 'AES-GCM' }, false, [
+      'encrypt',
+      'decrypt',
+    ]);
+    await storeKeyInIDB(key);
+    localStorage.removeItem(LEGACY_LS_KEY);
+    return key;
   }
-  const key = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, true, [
-    'encrypt', 'decrypt',
-  ]);
-  const raw = await crypto.subtle.exportKey('raw', key);
-  localStorage.setItem(DB_KEY_STORAGE, btoa(String.fromCharCode(...new Uint8Array(raw))));
+
+  // First time on this device — generate a fresh non-extractable key.
+  const key = await crypto.subtle.generateKey(
+    { name: 'AES-GCM', length: 256 },
+    false, // non-extractable: JS cannot call exportKey on this handle
+    ['encrypt', 'decrypt'],
+  );
+  await storeKeyInIDB(key);
   return key;
 }
 
@@ -65,6 +137,25 @@ export async function decryptDb(data: Uint8Array, key: CryptoKey): Promise<Uint8
 }
 
 // ---------------------------------------------------------------------------
+// Plaintext SQLite detection
+// ---------------------------------------------------------------------------
+
+/**
+ * "SQLite format 3\0" — the magic bytes at the start of every SQLite 3 file.
+ * Used to detect an unencrypted DB file that needs to be migrated.
+ */
+// prettier-ignore
+const SQLITE_MAGIC = new Uint8Array([
+  0x53, 0x51, 0x4c, 0x69, 0x74, 0x65, 0x20, 0x66,
+  0x6f, 0x72, 0x6d, 0x61, 0x74, 0x20, 0x33, 0x00,
+]);
+
+export function isSqliteMagic(data: Uint8Array): boolean {
+  if (data.length < 16) return false;
+  return SQLITE_MAGIC.every((b, i) => b === data[i]);
+}
+
+// ---------------------------------------------------------------------------
 // OPFS helpers
 // ---------------------------------------------------------------------------
 
@@ -73,9 +164,17 @@ export async function loadFromOpfs(key: CryptoKey): Promise<Uint8Array | null> {
     const root = await navigator.storage.getDirectory();
     const fileHandle = await root.getFileHandle(OPFS_FILE_NAME);
     const file = await fileHandle.getFile();
-    const encrypted = new Uint8Array(await file.arrayBuffer());
-    if (encrypted.length === 0) return null;
-    return await decryptDb(encrypted, key);
+    const data = new Uint8Array(await file.arrayBuffer());
+    if (data.length === 0) return null;
+
+    // Migrate: file is plaintext SQLite from a pre-encryption app version.
+    // Re-encrypt in place so future loads go through the normal path.
+    if (isSqliteMagic(data)) {
+      await saveToOpfs(data, key);
+      return data;
+    }
+
+    return await decryptDb(data, key);
   } catch {
     return null;
   }
