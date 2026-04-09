@@ -95,10 +95,22 @@ async function migrateToEncrypted(dbName: string, passphrase: string): Promise<v
   const baseDir = toFsPath(FileSystem.documentDirectory!);
   const encryptedPath = `${baseDir}${migrationName}`;
 
+  // ATTACH DATABASE does not support bind parameters for the path or key.
+  // Validate both values are safe to interpolate before building the SQL.
+  // passphrase is always 64 hex chars produced by getOrCreatePassphrase().
+  if (!/^[0-9a-f]+$/i.test(passphrase)) {
+    throw new Error('Passphrase contains unexpected characters');
+  }
+  // Escape any single quotes in the path (standard SQL literal escaping).
+  const safePath = encryptedPath.replace(/'/g, "''");
+
+  const originalUri = `${FileSystem.documentDirectory}${dbName}`;
+  const encryptedUri = `${FileSystem.documentDirectory}${migrationName}`;
+
   const plainDb = open({ name: dbName });
   try {
     await plainDb.execute(
-      `ATTACH DATABASE '${encryptedPath}' AS encrypted KEY '${passphrase}'`,
+      `ATTACH DATABASE '${safePath}' AS encrypted KEY '${passphrase}'`,
     );
     await plainDb.execute("SELECT sqlcipher_export('encrypted')");
     await plainDb.execute('DETACH DATABASE encrypted');
@@ -107,9 +119,14 @@ async function migrateToEncrypted(dbName: string, passphrase: string): Promise<v
   }
 
   // Atomically replace the plaintext original with the encrypted copy.
-  const originalUri = `${FileSystem.documentDirectory}${dbName}`;
-  const encryptedUri = `${FileSystem.documentDirectory}${migrationName}`;
-  await FileSystem.moveAsync({ from: encryptedUri, to: originalUri });
+  // On failure, clean up the partial migration file so the next launch
+  // can retry cleanly.
+  try {
+    await FileSystem.moveAsync({ from: encryptedUri, to: originalUri });
+  } catch (err) {
+    await FileSystem.deleteAsync(encryptedUri, { idempotent: true }).catch(() => {});
+    throw err;
+  }
 }
 
 // ---------------------------------------------------------------------------
