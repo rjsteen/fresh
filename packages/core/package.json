@@ -35,6 +35,11 @@
       "import": "./dist/cloud/index.mjs",
       "require": "./dist/cloud/index.js",
       "types": "./dist/cloud/index.d.ts"
+    },
+    "./sync": {
+      "import": "./dist/sync/index.mjs",
+      "require": "./dist/sync/index.js",
+      "types": "./dist/sync/index.d.ts"
     }
   },
   "scripts": {

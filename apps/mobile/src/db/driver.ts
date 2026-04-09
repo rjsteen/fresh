@@ -63,6 +63,29 @@ export class NativeSqliteDriver implements SqliteDriver {
     return `${FileSystem.documentDirectory}${DB_NAME}`;
   }
 
+  /**
+   * Derive an AES-256-GCM CryptoKey from the stored SQLCipher passphrase.
+   * The passphrase is 64 hex chars (32 raw bytes) — exactly the right size for
+   * AES-256. Both the DB key and the batch decryption key share this material
+   * so the device has a single key registered with the backend.
+   *
+   * Requires globalThis.crypto.subtle — available in Expo SDK 52+ via the
+   * expo-crypto global polyfill.
+   */
+  static async getDeviceKey(): Promise<CryptoKey> {
+    const passphrase = await SecureStore.getItemAsync(KEY_STORE_KEY, {
+      keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
+    });
+    if (!passphrase) throw new Error('No device key in secure store');
+
+    const raw = new Uint8Array(32);
+    for (let i = 0; i < 32; i++) {
+      raw[i] = parseInt(passphrase.slice(i * 2, i * 2 + 2), 16);
+    }
+
+    return crypto.subtle.importKey('raw', raw, { name: 'AES-GCM' }, false, ['decrypt']);
+  }
+
   async execute(sql: string, params: (string | number | null)[] = []): Promise<QueryResult> {
     const result = await this.db.execute(sql, params);
     return {
