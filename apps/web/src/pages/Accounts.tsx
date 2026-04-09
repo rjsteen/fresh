@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import styled from 'styled-components';
 import { format } from 'date-fns';
@@ -6,8 +6,10 @@ import { useDb } from '../App';
 import { getAccounts } from '@fresh/core/db';
 import type { Account } from '@fresh/core/db';
 import { useFinanceSocket } from '@fresh/core/channels';
+import { processSyncBatch } from '@fresh/core/sync';
 import { useAuth } from '../hooks/useAuth';
 import { apiFetch, API } from '../utils/api';
+import { getOrCreateDbKey } from '../db/driver';
 
 const WS_URL = API.replace(/^http/, 'ws') + '/socket';
 
@@ -386,12 +388,25 @@ export function Accounts() {
     [syncJobs],
   );
 
+  // Stable ref so the onSyncComplete closure can access ackSync without a
+  // circular dependency on the useFinanceSocket return value.
+  const ackSyncRef = useRef<(ref: string) => void>(() => {});
+
   // Real-time sync status from Phoenix channel
-  useFinanceSocket({
+  const { ackSync } = useFinanceSocket({
     url: WS_URL,
     deviceToken: token,
-    onSyncComplete: ({ account_token_ref }) => {
-      setSyncStatusOverride((prev) => ({ ...prev, [account_token_ref]: 'idle' }));
+    onSyncComplete: (payload) => {
+      setSyncStatusOverride((prev) => ({ ...prev, [payload.account_token_ref]: 'idle' }));
+      getOrCreateDbKey()
+        .then((key) =>
+          processSyncBatch(payload, {
+            db: db.raw,
+            deviceKey: key,
+            ackSync: ackSyncRef.current,
+          })
+        )
+        .catch((err) => console.error('[Accounts] sync batch failed:', err));
       refetchAccounts();
       qc.invalidateQueries({ queryKey: ['sync-jobs'] });
     },
@@ -399,6 +414,9 @@ export function Accounts() {
       setSyncStatusOverride((prev) => ({ ...prev, [account_token_ref]: 'error' }));
     },
   });
+
+  // Keep ref current with the stable ackSync callback
+  ackSyncRef.current = ackSync;
 
   function getStatusForAccount(account: Account): SyncStatus {
     if (account.sync_token_ref) {

@@ -8,6 +8,7 @@ export default defineConfig({
     'channels/index': 'src/channels/index.ts',
     'budget/index': 'src/budget/index.ts',
     'cloud/index': 'src/cloud/index.ts',
+    'sync/index': 'src/sync/index.ts',
   },
   format: ['esm', 'cjs'],
   dts: true,
