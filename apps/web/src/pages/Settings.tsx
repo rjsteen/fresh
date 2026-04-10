@@ -607,25 +607,25 @@ function ruleToForm(rule: AlertRule): RuleFormState {
 
   switch (rule.rule_type) {
     case 'large_transaction':
-      return { ...base, threshold_amount: String((p as any).threshold_amount ?? '') };
+      return { ...base, threshold_amount: String(p.threshold_amount ?? '') };
     case 'budget_threshold':
       return {
         ...base,
-        budget_line_id: (p as any).budget_line_id ?? '',
-        threshold_pct: String((p as any).threshold_pct ?? ''),
-        period_start: (p as any).period_start ?? '',
-        period_end: (p as any).period_end ?? '',
+        budget_line_id: String(p.budget_line_id ?? ''),
+        threshold_pct: String(p.threshold_pct ?? ''),
+        period_start: String(p.period_start ?? ''),
+        period_end: String(p.period_end ?? ''),
       };
     case 'balance_low':
       return {
         ...base,
-        account_id: (p as any).account_id ?? '',
-        threshold_amount: String((p as any).threshold_amount ?? ''),
+        account_id: String(p.account_id ?? ''),
+        threshold_amount: String(p.threshold_amount ?? ''),
       };
     case 'merchant':
       return {
         ...base,
-        merchant_names: ((p as any).merchant_names as string[] ?? []).join(', '),
+        merchant_names: (Array.isArray(p.merchant_names) ? (p.merchant_names as string[]) : []).join(', '),
       };
   }
 }
@@ -753,7 +753,7 @@ export function Settings() {
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
-        throw new Error((body as any).error ?? 'Failed to change password.');
+        throw new Error((body as { error?: string }).error ?? 'Failed to change password.');
       }
     },
     onSuccess: () => {

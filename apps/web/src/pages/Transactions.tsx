@@ -61,7 +61,8 @@ async function fetchTxPage(
 
   const where = conds.length > 0 ? `WHERE ${conds.join(' AND ')}` : '';
 
-  const rows = await db.query<any>(
+  type TxRow = Omit<Transaction, 'pending' | 'tags'> & { pending: 0 | 1; tags_json: string | null };
+  const rows = await db.query<TxRow>(
     `SELECT t.*, json(t.tags) as tags_json
      FROM transactions t
      ${where}
@@ -70,7 +71,7 @@ async function fetchTxPage(
     [...params, PAGE_SIZE + 1, offset]
   );
 
-  return rows.map((r: any) => ({
+  return rows.map((r) => ({
     ...r,
     pending: r.pending === 1,
     tags: r.tags_json ? JSON.parse(r.tags_json) : null,
@@ -98,12 +99,13 @@ async function fetchAllForExport(db: SqliteDriver, filters: Filters): Promise<Tr
 
   const where = conds.length > 0 ? `WHERE ${conds.join(' AND ')}` : '';
 
-  const rows = await db.query<any>(
+  type TxRow = Omit<Transaction, 'pending' | 'tags'> & { pending: 0 | 1; tags_json: string | null };
+  const rows = await db.query<TxRow>(
     `SELECT t.*, json(t.tags) as tags_json FROM transactions t ${where}
      ORDER BY t.date DESC, t.created_at DESC`,
     params
   );
-  return rows.map((r: any) => ({
+  return rows.map((r) => ({
     ...r, pending: r.pending === 1, tags: r.tags_json ? JSON.parse(r.tags_json) : null,
   })) as Transaction[];
 }
@@ -743,6 +745,7 @@ function TxRow({
 
   // Reset local state when tx changes
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional: reset form fields when transaction changes
     setNotes(tx.notes ?? '');
     setTagsStr((tx.tags ?? []).join(', '));
   }, [tx.id, tx.notes, tx.tags]);
@@ -902,8 +905,8 @@ export function Transactions() {
   const { data: txPage = [], isFetching } = useQuery({
     queryKey: ['transactions', filters, page],
     queryFn: () => fetchTxPage(db.raw, filters, page * PAGE_SIZE),
-    keepPreviousData: true,
-  } as any);
+    placeholderData: (prev: Transaction[] | undefined) => prev,
+  });
 
   const txns: Transaction[] = (txPage as Transaction[]).slice(0, PAGE_SIZE);
   const hasNextPage = (txPage as Transaction[]).length > PAGE_SIZE;

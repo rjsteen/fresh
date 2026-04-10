@@ -39,6 +39,7 @@ function SyncHandler({ db }: { db: DbClient }) {
     },
   });
 
+  // eslint-disable-next-line react-hooks/refs -- stable ref pattern: keeps ackSync current without re-subscribing
   ackSyncRef.current = ackSync;
 
   return null;

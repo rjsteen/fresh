@@ -2,8 +2,8 @@ defmodule FinappWeb.AuthController do
   use Phoenix.Controller, formats: [:json]
   import Ecto.Query
 
-  alias Finapp.{Repo, Guardian}
   alias Finapp.Accounts.User
+  alias Finapp.{Guardian, Repo}
 
   def register(conn, %{"email" => _email, "password" => _password} = params) do
     changeset = User.registration_changeset(%User{}, params)

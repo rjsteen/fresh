@@ -1,4 +1,6 @@
 defmodule FinappWeb.Plugs.RateLimiter do
+  @moduledoc false
+
   import Plug.Conn
   import Phoenix.Controller
 

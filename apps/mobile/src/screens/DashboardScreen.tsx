@@ -103,7 +103,7 @@ export function DashboardScreen() {
             <View key={s.category_id ?? 'other'} style={styles.categoryRow}>
               <Text style={styles.categoryName}>{s.category_name ?? 'Uncategorized'}</Text>
               <View style={styles.categoryBar}>
-                <View style={[styles.categoryFill, { width: `${s.pct_of_total}%` as any }]} />
+                <View style={[styles.categoryFill, { width: `${s.pct_of_total}%` as `${number}%` }]} />
               </View>
               <Text style={styles.categoryAmount}>{currency(s.total)}</Text>
             </View>

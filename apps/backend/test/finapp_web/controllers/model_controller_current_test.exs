@@ -1,19 +1,22 @@
 defmodule FinappWeb.ModelControllerCurrentTest do
   use FinappWeb.ConnCase, async: true
 
+  alias Finapp.Accounts.User
+  alias Finapp.Guardian
+
   @checksum String.duplicate("a", 64)
   @cdn_base Application.compile_env!(:finapp, :cdn_base_url)
 
   defp authed(conn) do
     {:ok, user} =
       Repo.insert(
-        Finapp.Accounts.User.registration_changeset(%Finapp.Accounts.User{}, %{
+        User.registration_changeset(%User{}, %{
           "email" => "model-test-#{System.unique_integer([:positive])}@example.com",
           "password" => "Password1!"
         })
       )
 
-    {:ok, token, _} = Finapp.Guardian.build_token(user)
+    {:ok, token, _} = Guardian.build_token(user)
     put_req_header(conn, "authorization", "Bearer #{token}")
   end
 

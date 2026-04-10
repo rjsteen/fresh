@@ -1,4 +1,6 @@
 defmodule FinappWeb.Plugs.AuthPipeline do
+  @moduledoc false
+
   use Guardian.Plug.Pipeline,
     otp_app: :finapp,
     module: Finapp.Guardian,
@@ -10,6 +12,8 @@ defmodule FinappWeb.Plugs.AuthPipeline do
 end
 
 defmodule FinappWeb.Plugs.AuthErrorHandler do
+  @moduledoc false
+
   import Plug.Conn
   import Phoenix.Controller
 

@@ -113,6 +113,6 @@ export type Theme = typeof theme;
 
 // Augment styled-components DefaultTheme so all styled components are typed
 declare module 'styled-components' {
-  // eslint-disable-next-line @typescript-eslint/no-empty-interface
+  // eslint-disable-next-line @typescript-eslint/no-empty-object-type -- required for styled-components module augmentation
   interface DefaultTheme extends Theme {}
 }

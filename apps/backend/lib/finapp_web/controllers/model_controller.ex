@@ -2,6 +2,7 @@ defmodule FinappWeb.ModelController do
   use Phoenix.Controller, formats: [:json]
 
   import Ecto.Query
+  alias Finapp.ML.ModelDistributionWorker
   alias Finapp.Repo
 
   def notify(conn, %{"model_type" => model_type, "version" => version,
@@ -37,7 +38,7 @@ defmodule FinappWeb.ModelController do
     end)
 
     {:ok, _} =
-      Oban.insert(Finapp.ML.ModelDistributionWorker.new(%{
+      Oban.insert(ModelDistributionWorker.new(%{
         "model_type" => model_type,
         "version" => version,
         "cdn_path" => cdn_path,

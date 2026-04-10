@@ -83,6 +83,7 @@ export class FinanceSocket {
 
     return () => {
       set.delete(wrapper);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- phoenix Channel.off types don't match wrapper
       this.deviceChannel?.off(event, wrapper as any);
     };
   }

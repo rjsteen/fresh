@@ -10,6 +10,7 @@ defmodule FinappWeb.DeviceChannel do
 
   use Phoenix.Channel
   alias Finapp.Accounts
+  alias Finapp.Accounts.Device
   alias Finapp.Repo
 
   @impl true
@@ -99,7 +100,7 @@ defmodule FinappWeb.DeviceChannel do
         nil -> :ok
         device ->
           device
-          |> Finapp.Accounts.Device.touch_changeset()
+          |> Device.touch_changeset()
           |> Repo.update()
       end
     end)

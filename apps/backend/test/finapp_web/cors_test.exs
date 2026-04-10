@@ -10,10 +10,7 @@ defmodule FinappWeb.CorsTest do
   These tests do not require a database connection.
   """
 
-  use ExUnit.Case, async: true
-  use Phoenix.ConnTest
-
-  @endpoint FinappWeb.Endpoint
+  use FinappWeb.ConnCase, async: true
 
   @allowed_origins [
     "http://localhost:5173",

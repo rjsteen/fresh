@@ -416,6 +416,7 @@ export function Accounts() {
   });
 
   // Keep ref current with the stable ackSync callback
+  // eslint-disable-next-line react-hooks/refs -- stable ref pattern: keeps ackSync current without re-subscribing
   ackSyncRef.current = ackSync;
 
   function getStatusForAccount(account: Account): SyncStatus {

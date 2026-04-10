@@ -20,6 +20,7 @@ export function useFinanceSocket(opts: UseFinanceSocketOptions) {
   const [isConnected, setIsConnected] = useState(false);
 
   const stableOpts = useRef(opts);
+  // eslint-disable-next-line react-hooks/refs -- stable ref pattern: keeps opts current without re-subscribing
   stableOpts.current = opts;
 
   useEffect(() => {
@@ -60,7 +61,6 @@ export function useFinanceSocket(opts: UseFinanceSocketOptions) {
       socketRef.current = null;
       setIsConnected(false);
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [opts.deviceToken, opts.url]);
 
   const ackSync = useCallback((accountTokenRef: string) => {
@@ -85,6 +85,7 @@ export function useSocketEvent<T>(
   handler: (payload: T) => void
 ): void {
   const stableHandler = useRef(handler);
+  // eslint-disable-next-line react-hooks/refs -- stable ref pattern: keeps handler current without re-subscribing
   stableHandler.current = handler;
 
   useEffect(() => {
