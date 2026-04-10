@@ -6,6 +6,11 @@
     "apps/mobile",
     "packages/*"
   ],
+  "pnpm": {
+    "overrides": {
+      "@types/react": "~18.3.28"
+    }
+  },
   "devDependencies": {
     "@types/node": "^22.10.0",
     "eslint": "^10.2.0",
