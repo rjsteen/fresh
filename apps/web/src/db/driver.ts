@@ -247,6 +247,14 @@ export class WebSqliteDriver implements SqliteDriver {
   }
 
   async execute(sql: string, params: (string | number | null)[] = []): Promise<QueryResult> {
+    if (params.length === 0) {
+      // db.run() supports multi-statement DDL and trigger bodies with internal semicolons.
+      // db.prepare() only handles a single statement and rejects trigger syntax.
+      this.db.run(sql);
+      const rowsAffected = this.db.getRowsModified();
+      this.scheduleSave();
+      return { rows: [], rowsAffected };
+    }
     const stmt = this.db.prepare(sql);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- sql.js BindParams type doesn't accept (string|number|null)[]
     stmt.run(params as any);

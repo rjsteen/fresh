@@ -5,7 +5,7 @@
  * The backend never receives, stores, or processes any of these values.
  */
 
-export const SCHEMA_VERSION = 5;
+export const SCHEMA_VERSION = 6;
 
 export const CREATE_TABLES_SQL = `
 -- Schema version tracking
@@ -178,6 +178,269 @@ export const MIGRATIONS: Record<number, string> = {
       key   TEXT PRIMARY KEY,
       value TEXT NOT NULL
     );
+  `,
+
+  6: `
+    -- accounts triggers
+    CREATE TRIGGER IF NOT EXISTS trg_accounts_insert
+    AFTER INSERT ON accounts BEGIN
+      INSERT INTO change_log (table_name, row_id, operation, payload)
+      VALUES ('accounts', NEW.id, 'insert', json_object(
+        'id', NEW.id, 'name', NEW.name, 'institution', NEW.institution,
+        'type', NEW.type, 'currency', NEW.currency,
+        'current_balance', NEW.current_balance, 'available_balance', NEW.available_balance,
+        'last_synced_at', NEW.last_synced_at, 'connection_type', NEW.connection_type,
+        'sync_token_ref', NEW.sync_token_ref, 'is_active', NEW.is_active,
+        'display_order', NEW.display_order, 'created_at', NEW.created_at, 'updated_at', NEW.updated_at
+      ));
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS trg_accounts_update
+    AFTER UPDATE ON accounts BEGIN
+      INSERT INTO change_log (table_name, row_id, operation, payload)
+      VALUES ('accounts', NEW.id, 'update', json_object(
+        'id', NEW.id, 'name', NEW.name, 'institution', NEW.institution,
+        'type', NEW.type, 'currency', NEW.currency,
+        'current_balance', NEW.current_balance, 'available_balance', NEW.available_balance,
+        'last_synced_at', NEW.last_synced_at, 'connection_type', NEW.connection_type,
+        'sync_token_ref', NEW.sync_token_ref, 'is_active', NEW.is_active,
+        'display_order', NEW.display_order, 'created_at', NEW.created_at, 'updated_at', NEW.updated_at
+      ));
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS trg_accounts_delete
+    AFTER DELETE ON accounts BEGIN
+      INSERT INTO change_log (table_name, row_id, operation, payload)
+      VALUES ('accounts', OLD.id, 'delete', NULL);
+    END;
+
+    -- transactions triggers
+    CREATE TRIGGER IF NOT EXISTS trg_transactions_insert
+    AFTER INSERT ON transactions BEGIN
+      INSERT INTO change_log (table_name, row_id, operation, payload)
+      VALUES ('transactions', NEW.id, 'insert', json_object(
+        'id', NEW.id, 'account_id', NEW.account_id, 'external_id', NEW.external_id,
+        'amount', NEW.amount, 'currency', NEW.currency, 'description', NEW.description,
+        'merchant_name', NEW.merchant_name, 'category_id', NEW.category_id,
+        'category_source', NEW.category_source, 'ml_confidence', NEW.ml_confidence,
+        'date', NEW.date, 'posted_at', NEW.posted_at, 'pending', NEW.pending,
+        'notes', NEW.notes, 'tags', NEW.tags, 'receipt_uri', NEW.receipt_uri,
+        'split_of', NEW.split_of, 'created_at', NEW.created_at, 'updated_at', NEW.updated_at
+      ));
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS trg_transactions_update
+    AFTER UPDATE ON transactions BEGIN
+      INSERT INTO change_log (table_name, row_id, operation, payload)
+      VALUES ('transactions', NEW.id, 'update', json_object(
+        'id', NEW.id, 'account_id', NEW.account_id, 'external_id', NEW.external_id,
+        'amount', NEW.amount, 'currency', NEW.currency, 'description', NEW.description,
+        'merchant_name', NEW.merchant_name, 'category_id', NEW.category_id,
+        'category_source', NEW.category_source, 'ml_confidence', NEW.ml_confidence,
+        'date', NEW.date, 'posted_at', NEW.posted_at, 'pending', NEW.pending,
+        'notes', NEW.notes, 'tags', NEW.tags, 'receipt_uri', NEW.receipt_uri,
+        'split_of', NEW.split_of, 'created_at', NEW.created_at, 'updated_at', NEW.updated_at
+      ));
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS trg_transactions_delete
+    AFTER DELETE ON transactions BEGIN
+      INSERT INTO change_log (table_name, row_id, operation, payload)
+      VALUES ('transactions', OLD.id, 'delete', NULL);
+    END;
+
+    -- categories triggers
+    CREATE TRIGGER IF NOT EXISTS trg_categories_insert
+    AFTER INSERT ON categories BEGIN
+      INSERT INTO change_log (table_name, row_id, operation, payload)
+      VALUES ('categories', NEW.id, 'insert', json_object(
+        'id', NEW.id, 'name', NEW.name, 'parent_id', NEW.parent_id,
+        'icon', NEW.icon, 'color', NEW.color, 'is_system', NEW.is_system,
+        'created_at', NEW.created_at
+      ));
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS trg_categories_update
+    AFTER UPDATE ON categories BEGIN
+      INSERT INTO change_log (table_name, row_id, operation, payload)
+      VALUES ('categories', NEW.id, 'update', json_object(
+        'id', NEW.id, 'name', NEW.name, 'parent_id', NEW.parent_id,
+        'icon', NEW.icon, 'color', NEW.color, 'is_system', NEW.is_system,
+        'created_at', NEW.created_at
+      ));
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS trg_categories_delete
+    AFTER DELETE ON categories BEGIN
+      INSERT INTO change_log (table_name, row_id, operation, payload)
+      VALUES ('categories', OLD.id, 'delete', NULL);
+    END;
+
+    -- budgets triggers
+    CREATE TRIGGER IF NOT EXISTS trg_budgets_insert
+    AFTER INSERT ON budgets BEGIN
+      INSERT INTO change_log (table_name, row_id, operation, payload)
+      VALUES ('budgets', NEW.id, 'insert', json_object(
+        'id', NEW.id, 'name', NEW.name, 'period_type', NEW.period_type,
+        'start_date', NEW.start_date, 'end_date', NEW.end_date,
+        'is_active', NEW.is_active, 'created_at', NEW.created_at, 'updated_at', NEW.updated_at
+      ));
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS trg_budgets_update
+    AFTER UPDATE ON budgets BEGIN
+      INSERT INTO change_log (table_name, row_id, operation, payload)
+      VALUES ('budgets', NEW.id, 'update', json_object(
+        'id', NEW.id, 'name', NEW.name, 'period_type', NEW.period_type,
+        'start_date', NEW.start_date, 'end_date', NEW.end_date,
+        'is_active', NEW.is_active, 'created_at', NEW.created_at, 'updated_at', NEW.updated_at
+      ));
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS trg_budgets_delete
+    AFTER DELETE ON budgets BEGIN
+      INSERT INTO change_log (table_name, row_id, operation, payload)
+      VALUES ('budgets', OLD.id, 'delete', NULL);
+    END;
+
+    -- budget_lines triggers
+    CREATE TRIGGER IF NOT EXISTS trg_budget_lines_insert
+    AFTER INSERT ON budget_lines BEGIN
+      INSERT INTO change_log (table_name, row_id, operation, payload)
+      VALUES ('budget_lines', NEW.id, 'insert', json_object(
+        'id', NEW.id, 'budget_id', NEW.budget_id, 'category_id', NEW.category_id,
+        'name', NEW.name, 'limit_amount', NEW.limit_amount, 'rollover', NEW.rollover,
+        'created_at', NEW.created_at, 'updated_at', NEW.updated_at
+      ));
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS trg_budget_lines_update
+    AFTER UPDATE ON budget_lines BEGIN
+      INSERT INTO change_log (table_name, row_id, operation, payload)
+      VALUES ('budget_lines', NEW.id, 'update', json_object(
+        'id', NEW.id, 'budget_id', NEW.budget_id, 'category_id', NEW.category_id,
+        'name', NEW.name, 'limit_amount', NEW.limit_amount, 'rollover', NEW.rollover,
+        'created_at', NEW.created_at, 'updated_at', NEW.updated_at
+      ));
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS trg_budget_lines_delete
+    AFTER DELETE ON budget_lines BEGIN
+      INSERT INTO change_log (table_name, row_id, operation, payload)
+      VALUES ('budget_lines', OLD.id, 'delete', NULL);
+    END;
+
+    -- alert_rules triggers
+    CREATE TRIGGER IF NOT EXISTS trg_alert_rules_insert
+    AFTER INSERT ON alert_rules BEGIN
+      INSERT INTO change_log (table_name, row_id, operation, payload)
+      VALUES ('alert_rules', NEW.id, 'insert', json_object(
+        'id', NEW.id, 'name', NEW.name, 'rule_type', NEW.rule_type,
+        'params', NEW.params, 'enabled', NEW.enabled,
+        'backend_token_ref', NEW.backend_token_ref,
+        'created_at', NEW.created_at, 'updated_at', NEW.updated_at
+      ));
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS trg_alert_rules_update
+    AFTER UPDATE ON alert_rules BEGIN
+      INSERT INTO change_log (table_name, row_id, operation, payload)
+      VALUES ('alert_rules', NEW.id, 'update', json_object(
+        'id', NEW.id, 'name', NEW.name, 'rule_type', NEW.rule_type,
+        'params', NEW.params, 'enabled', NEW.enabled,
+        'backend_token_ref', NEW.backend_token_ref,
+        'created_at', NEW.created_at, 'updated_at', NEW.updated_at
+      ));
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS trg_alert_rules_delete
+    AFTER DELETE ON alert_rules BEGIN
+      INSERT INTO change_log (table_name, row_id, operation, payload)
+      VALUES ('alert_rules', OLD.id, 'delete', NULL);
+    END;
+
+    -- recurring_patterns triggers
+    CREATE TRIGGER IF NOT EXISTS trg_recurring_patterns_insert
+    AFTER INSERT ON recurring_patterns BEGIN
+      INSERT INTO change_log (table_name, row_id, operation, payload)
+      VALUES ('recurring_patterns', NEW.id, 'insert', json_object(
+        'id', NEW.id, 'merchant_name', NEW.merchant_name, 'category_id', NEW.category_id,
+        'typical_amount', NEW.typical_amount, 'amount_variance', NEW.amount_variance,
+        'frequency_days', NEW.frequency_days, 'last_seen_at', NEW.last_seen_at,
+        'next_expected_at', NEW.next_expected_at, 'is_subscription', NEW.is_subscription,
+        'created_at', NEW.created_at, 'updated_at', NEW.updated_at
+      ));
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS trg_recurring_patterns_update
+    AFTER UPDATE ON recurring_patterns BEGIN
+      INSERT INTO change_log (table_name, row_id, operation, payload)
+      VALUES ('recurring_patterns', NEW.id, 'update', json_object(
+        'id', NEW.id, 'merchant_name', NEW.merchant_name, 'category_id', NEW.category_id,
+        'typical_amount', NEW.typical_amount, 'amount_variance', NEW.amount_variance,
+        'frequency_days', NEW.frequency_days, 'last_seen_at', NEW.last_seen_at,
+        'next_expected_at', NEW.next_expected_at, 'is_subscription', NEW.is_subscription,
+        'created_at', NEW.created_at, 'updated_at', NEW.updated_at
+      ));
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS trg_recurring_patterns_delete
+    AFTER DELETE ON recurring_patterns BEGIN
+      INSERT INTO change_log (table_name, row_id, operation, payload)
+      VALUES ('recurring_patterns', OLD.id, 'delete', NULL);
+    END;
+
+    -- anomalies triggers
+    CREATE TRIGGER IF NOT EXISTS trg_anomalies_insert
+    AFTER INSERT ON anomalies BEGIN
+      INSERT INTO change_log (table_name, row_id, operation, payload)
+      VALUES ('anomalies', NEW.id, 'insert', json_object(
+        'id', NEW.id, 'transaction_id', NEW.transaction_id, 'type', NEW.type,
+        'score', NEW.score, 'acknowledged', NEW.acknowledged, 'detected_at', NEW.detected_at
+      ));
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS trg_anomalies_update
+    AFTER UPDATE ON anomalies BEGIN
+      INSERT INTO change_log (table_name, row_id, operation, payload)
+      VALUES ('anomalies', NEW.id, 'update', json_object(
+        'id', NEW.id, 'transaction_id', NEW.transaction_id, 'type', NEW.type,
+        'score', NEW.score, 'acknowledged', NEW.acknowledged, 'detected_at', NEW.detected_at
+      ));
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS trg_anomalies_delete
+    AFTER DELETE ON anomalies BEGIN
+      INSERT INTO change_log (table_name, row_id, operation, payload)
+      VALUES ('anomalies', OLD.id, 'delete', NULL);
+    END;
+
+    -- sync_state triggers (PK is account_id, not id)
+    CREATE TRIGGER IF NOT EXISTS trg_sync_state_insert
+    AFTER INSERT ON sync_state BEGIN
+      INSERT INTO change_log (table_name, row_id, operation, payload)
+      VALUES ('sync_state', NEW.account_id, 'insert', json_object(
+        'account_id', NEW.account_id, 'last_cursor', NEW.last_cursor,
+        'last_success_at', NEW.last_success_at, 'last_error', NEW.last_error,
+        'retry_count', NEW.retry_count
+      ));
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS trg_sync_state_update
+    AFTER UPDATE ON sync_state BEGIN
+      INSERT INTO change_log (table_name, row_id, operation, payload)
+      VALUES ('sync_state', NEW.account_id, 'update', json_object(
+        'account_id', NEW.account_id, 'last_cursor', NEW.last_cursor,
+        'last_success_at', NEW.last_success_at, 'last_error', NEW.last_error,
+        'retry_count', NEW.retry_count
+      ));
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS trg_sync_state_delete
+    AFTER DELETE ON sync_state BEGIN
+      INSERT INTO change_log (table_name, row_id, operation, payload)
+      VALUES ('sync_state', OLD.account_id, 'delete', NULL);
+    END;
   `,
 };
 
