@@ -29,6 +29,7 @@ defmodule FinappWeb.Router do
     pipe_through [:api, :authenticated]
 
     # Account management
+    patch "/users/me", UserController, :update
     delete "/users/me", UserController, :delete
 
     # Device management

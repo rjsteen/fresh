@@ -51,6 +51,7 @@ defmodule Finapp.MixProject do
       # Redis (for rate limiting and distributed locks)
       {:redix, "~> 1.5"},
       {:ex_rated, "~> 2.1"},
+      {:tzdata, "~> 1.1"},
 
       # Monitoring
       {:telemetry_metrics, "~> 1.0"},
