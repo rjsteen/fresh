@@ -41,13 +41,13 @@ defmodule FinappWeb.UserControllerTest do
         |> authed(user)
         |> patch("/api/v1/users/me", %{
           "current_password" => "password123",
-          "new_password" => "newpass456"
+          "new_password" => "newpassword456!"
         })
 
       assert resp.status == 200
 
       updated = Repo.get(User, user.id)
-      assert Bcrypt.verify_pass("newpass456", updated.password_hash)
+      assert Bcrypt.verify_pass("newpassword456!", updated.password_hash)
     end
 
     test "returns 401 when current_password is wrong", %{conn: conn} do
@@ -58,7 +58,7 @@ defmodule FinappWeb.UserControllerTest do
         |> authed(user)
         |> patch("/api/v1/users/me", %{
           "current_password" => "wrongpass",
-          "new_password" => "newpass456"
+          "new_password" => "newpassword456!"
         })
 
       assert json_response(resp, 401) == %{"error" => "invalid_password"}
@@ -73,9 +73,70 @@ defmodule FinappWeb.UserControllerTest do
       resp =
         conn
         |> authed(user)
-        |> patch("/api/v1/users/me", %{"new_password" => "newpass456"})
+        |> patch("/api/v1/users/me", %{"new_password" => "newpassword456!"})
 
       assert json_response(resp, 401) == %{"error" => "invalid_password"}
+    end
+
+    test "returns 422 when new_password is too short", %{conn: conn} do
+      user = create_user()
+
+      resp =
+        conn
+        |> authed(user)
+        |> patch("/api/v1/users/me", %{
+          "current_password" => "password123",
+          "new_password" => "short1!"
+        })
+
+      assert resp.status == 422
+      body = json_response(resp, 422)
+      assert get_in(body, ["errors", "new_password"]) != nil
+    end
+
+    test "returns 422 when new_password is too long", %{conn: conn} do
+      user = create_user()
+
+      resp =
+        conn
+        |> authed(user)
+        |> patch("/api/v1/users/me", %{
+          "current_password" => "password123",
+          "new_password" => String.duplicate("a", 71) <> "1!"
+        })
+
+      assert resp.status == 422
+      body = json_response(resp, 422)
+      assert get_in(body, ["errors", "new_password"]) != nil
+    end
+
+    test "returns 422 when new_password has no numbers or symbols", %{conn: conn} do
+      user = create_user()
+
+      resp =
+        conn
+        |> authed(user)
+        |> patch("/api/v1/users/me", %{
+          "current_password" => "password123",
+          "new_password" => "newpasswordonly"
+        })
+
+      assert resp.status == 422
+      body = json_response(resp, 422)
+      assert get_in(body, ["errors", "new_password"]) != nil
+    end
+
+    test "returns 422 for invalid timezone", %{conn: conn} do
+      user = create_user()
+
+      resp =
+        conn
+        |> authed(user)
+        |> patch("/api/v1/users/me", %{"timezone" => "Not/ATimezone"})
+
+      assert resp.status == 422
+      body = json_response(resp, 422)
+      assert get_in(body, ["errors", "timezone"]) != nil
     end
 
     test "returns 422 for invalid region", %{conn: conn} do
