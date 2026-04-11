@@ -9,11 +9,13 @@ import GlobalStyle from './GlobalStyle';
 import { initDb } from './store/db';
 import { apiFetch } from './utils/api';
 import { AuthProvider, useAuth } from './hooks/useAuth';
+import { getStoredCloudAdapter } from './cloud/oauth';
 import { Dashboard } from './pages/Dashboard';
 import { Accounts } from './pages/Accounts';
 import { Transactions } from './pages/Transactions';
 import { Budget } from './pages/Budget';
 import { Settings } from './pages/Settings';
+import { OAuthCallback } from './pages/OAuthCallback';
 import { Login } from './pages/Login';
 import { Signup } from './pages/Signup';
 import { Register } from './pages/Register';
@@ -202,19 +204,27 @@ function AppRoutes() {
   const { isAuthenticated } = useAuth();
   const [db, setDb] = useState<DbClient | null>(null);
   const [initError, setInitError] = useState<string | null>(null);
+  const [splashMsg, setSplashMsg] = useState('Loading your data…');
 
   useEffect(() => {
     if (!isAuthenticated) {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional: clear DB state on logout
       setDb(null);
       setInitError(null);
+      setSplashMsg('Loading your data…');
       return;
     }
+
+    const cloudAdapter = getStoredCloudAdapter();
+    if (cloudAdapter) setSplashMsg('Syncing from cloud…');
+
     const timeout = setTimeout(() => {
       setInitError('Database took too long to initialize. Check the browser console for details.');
     }, 15_000);
 
-    initDb()
+    initDb(cloudAdapter ?? undefined, (status) => {
+      if (status !== 'no_cloud') setSplashMsg('Syncing from cloud…');
+    })
       .then((client) => { clearTimeout(timeout); setDb(client); })
       .catch((err: unknown) => {
         clearTimeout(timeout);
@@ -229,10 +239,11 @@ function AppRoutes() {
   return (
     <Routes>
       {/* Public routes */}
-      <Route path="/"        element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <Landing />} />
-      <Route path="/login"   element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <Login />} />
-      <Route path="/signup"  element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <Signup />} />
-      <Route path="/register" element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <Register />} />
+      <Route path="/"               element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <Landing />} />
+      <Route path="/login"          element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <Login />} />
+      <Route path="/signup"         element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <Signup />} />
+      <Route path="/register"       element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <Register />} />
+      <Route path="/oauth/callback" element={<OAuthCallback />} />
 
       {/* Protected routes */}
       <Route
@@ -243,7 +254,7 @@ function AppRoutes() {
           ) : initError ? (
             <ErrorScreen>Failed to initialize local database: {initError}</ErrorScreen>
           ) : !db ? (
-            <SplashScreen>Loading your data…</SplashScreen>
+            <SplashScreen>{splashMsg}</SplashScreen>
           ) : (
             <AuthenticatedShell db={db} />
           )

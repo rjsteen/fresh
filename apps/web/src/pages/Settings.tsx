@@ -6,6 +6,13 @@ import { useAuth } from '../hooks/useAuth';
 import { upsertAlertRule, deleteAlertRule, getAllAlertRules, getAccounts } from '@fresh/core/db';
 import type { AlertRule, AlertRuleType, Account } from '@fresh/core/db';
 import { apiFetch, API } from '../utils/api';
+import {
+  getStoredProvider,
+  clearCloudAuth,
+  initiateDropboxOAuth,
+  initiateGDriveOAuth,
+} from '../cloud/oauth';
+import type { CloudProvider } from '../cloud/oauth';
 
 // ---------------------------------------------------------------------------
 // Common timezones
@@ -682,6 +689,10 @@ export function Settings() {
   const [ruleFormError, setRuleFormError] = useState<string | null>(null);
   const [ruleBanner, setRuleBanner] = useState<string | null>(null);
 
+  // ---- cloud backup state ----
+  const [cloudProvider, setCloudProvider] = useState<CloudProvider | null>(() => getStoredProvider());
+  const [cloudError, setCloudError] = useState<string | null>(null);
+
   // ---- data section state ----
   const [dataBanner, setDataBanner] = useState<{ msg: string; ok: boolean } | null>(null);
 
@@ -954,6 +965,24 @@ export function Settings() {
     setDeletePassword('');
     setDeletePasswordError(null);
     deleteAccount.reset();
+  }
+
+  // ---- cloud backup handlers ----
+
+  async function handleConnectCloud(provider: CloudProvider) {
+    setCloudError(null);
+    try {
+      if (provider === 'dropbox') await initiateDropboxOAuth();
+      else await initiateGDriveOAuth();
+    } catch (err) {
+      setCloudError(err instanceof Error ? err.message : 'Failed to start OAuth flow.');
+    }
+  }
+
+  function handleDisconnectCloud() {
+    clearCloudAuth();
+    setCloudProvider(null);
+    setCloudError(null);
   }
 
   // ---- render helpers ----
@@ -1329,6 +1358,47 @@ export function Settings() {
             ))}
           </DeviceList>
         )}
+      </Card>
+
+      {/* ------------------------------------------------------------------ */}
+      {/* Cloud backup                                                        */}
+      {/* ------------------------------------------------------------------ */}
+      <Card>
+        <SectionTitle>Cloud Backup</SectionTitle>
+
+        <Row>
+          <div>
+            <RowLabel>Provider</RowLabel>
+            <RowSub>
+              {cloudProvider === 'dropbox' && 'Connected: Dropbox'}
+              {cloudProvider === 'gdrive' && 'Connected: Google Drive'}
+              {!cloudProvider && 'None — your data is stored locally only'}
+            </RowSub>
+          </div>
+          {cloudProvider && (
+            <DangerButton onClick={handleDisconnectCloud}>Disconnect</DangerButton>
+          )}
+        </Row>
+
+        {!cloudProvider && (
+          <>
+            <Divider />
+            <ButtonRow>
+              <GhostButton onClick={() => { void handleConnectCloud('dropbox'); }}>
+                Connect Dropbox
+              </GhostButton>
+              <GhostButton onClick={() => { void handleConnectCloud('gdrive'); }}>
+                Connect Google Drive
+              </GhostButton>
+            </ButtonRow>
+            <RowSub>
+              Encrypted backups are stored in your personal cloud account.
+              Fresh cannot read your financial data.
+            </RowSub>
+          </>
+        )}
+
+        {cloudError && <Banner $variant="error">{cloudError}</Banner>}
       </Card>
 
       {/* ------------------------------------------------------------------ */}

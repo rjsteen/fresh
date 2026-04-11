@@ -12,7 +12,7 @@
 
 import { DbClient } from '@fresh/core/db';
 import { CloudSyncManager, NoopCloudAdapter } from '@fresh/core/cloud';
-import type { CloudStorageAdapter } from '@fresh/core/cloud';
+import type { CloudStorageAdapter, HydrateStatus } from '@fresh/core/cloud';
 import { WebSqliteDriver } from '../db/driver';
 
 let dbClientSingleton: DbClient | null = null;
@@ -20,6 +20,7 @@ let syncManagerSingleton: CloudSyncManager | null = null;
 
 export async function initDb(
   cloudAdapter: CloudStorageAdapter = new NoopCloudAdapter(),
+  onHydrateStatus?: (status: HydrateStatus) => void,
 ): Promise<DbClient> {
   if (dbClientSingleton) return dbClientSingleton;
 
@@ -33,6 +34,7 @@ export async function initDb(
   const sync = new CloudSyncManager(driver, cloudAdapter);
   const status = await sync.hydrate();
   console.log('[initDb] hydration status:', status);
+  onHydrateStatus?.(status);
 
   if (status === 'hydrated') {
     // Full file was pulled — reinitialize driver from the decrypted blob.
