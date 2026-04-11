@@ -206,6 +206,16 @@ describe('budget_lines triggers', () => {
     expect(JSON.parse(row!.payload!).limit_amount).toBe(500);
   });
 
+  it('logs update', async () => {
+    await client.raw.execute(
+      `INSERT INTO budget_lines (id, budget_id, name, limit_amount) VALUES ('bl-1', 'bud-1', 'Groceries', 500)`
+    );
+    await client.raw.execute(`UPDATE budget_lines SET limit_amount = 750 WHERE id = 'bl-1'`);
+    const row = await lastLog('budget_lines', 'update');
+    expect(row?.row_id).toBe('bl-1');
+    expect(JSON.parse(row!.payload!).limit_amount).toBe(750);
+  });
+
   it('logs delete with null payload', async () => {
     await client.raw.execute(
       `INSERT INTO budget_lines (id, budget_id, name, limit_amount) VALUES ('bl-1', 'bud-1', 'Groceries', 500)`
@@ -230,6 +240,16 @@ describe('alert_rules triggers', () => {
     expect(JSON.parse(row!.payload!).rule_type).toBe('large_transaction');
   });
 
+  it('logs update', async () => {
+    await client.raw.execute(
+      `INSERT INTO alert_rules (id, name, rule_type, params) VALUES ('ar-1', 'Big spend', 'large_transaction', '{"threshold":100}')`
+    );
+    await client.raw.execute(`UPDATE alert_rules SET name = 'Huge spend' WHERE id = 'ar-1'`);
+    const row = await lastLog('alert_rules', 'update');
+    expect(row?.row_id).toBe('ar-1');
+    expect(JSON.parse(row!.payload!).name).toBe('Huge spend');
+  });
+
   it('logs delete with null payload', async () => {
     await client.raw.execute(
       `INSERT INTO alert_rules (id, name, rule_type, params) VALUES ('ar-1', 'Big spend', 'large_transaction', '{"threshold":100}')`
@@ -252,6 +272,16 @@ describe('recurring_patterns triggers', () => {
     const row = await lastLog('recurring_patterns', 'insert');
     expect(row?.row_id).toBe('rp-1');
     expect(JSON.parse(row!.payload!).frequency_days).toBe(30);
+  });
+
+  it('logs update', async () => {
+    await client.raw.execute(
+      `INSERT INTO recurring_patterns (id, merchant_name, frequency_days) VALUES ('rp-1', 'Netflix', 30)`
+    );
+    await client.raw.execute(`UPDATE recurring_patterns SET frequency_days = 31 WHERE id = 'rp-1'`);
+    const row = await lastLog('recurring_patterns', 'update');
+    expect(row?.row_id).toBe('rp-1');
+    expect(JSON.parse(row!.payload!).frequency_days).toBe(31);
   });
 
   it('logs delete with null payload', async () => {
