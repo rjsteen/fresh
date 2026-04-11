@@ -25,6 +25,49 @@ export interface ModelStore {
   get(modelType: string): Promise<ArrayBuffer | null>;
   set(modelType: string, version: string, data: ArrayBuffer): Promise<void>;
   getVersion(modelType: string): Promise<string | null>;
+  delete(modelType: string): Promise<void>;
+}
+
+// ---------------------------------------------------------------------------
+// Checksum helpers
+// ---------------------------------------------------------------------------
+
+async function sha256Hex(buffer: ArrayBuffer): Promise<string> {
+  const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
+  return Array.from(new Uint8Array(hashBuffer))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+/**
+ * Fetch a model from the CDN and verify its SHA-256 checksum.
+ * Retries once on mismatch (handles transient CDN corruption).
+ * Throws a descriptive error if both attempts fail.
+ */
+async function fetchAndVerify(
+  url: string,
+  modelType: string,
+  expectedChecksum: string | undefined,
+  attempt = 1
+): Promise<ArrayBuffer> {
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error(`Failed to fetch ${modelType} model: ${resp.status}`);
+  const buffer = await resp.arrayBuffer();
+
+  if (expectedChecksum) {
+    const actual = await sha256Hex(buffer);
+    if (actual !== expectedChecksum) {
+      if (attempt === 1) {
+        return fetchAndVerify(url, modelType, expectedChecksum, 2);
+      }
+      throw new Error(
+        `${modelType} model checksum mismatch after 2 download attempts — ` +
+        `expected ${expectedChecksum}, got ${actual}`
+      );
+    }
+  }
+
+  return buffer;
 }
 
 // ---------------------------------------------------------------------------
@@ -103,27 +146,29 @@ export class TransactionCategorizer {
     private readonly cdnBaseUrl: string
   ) {}
 
-  async load(version?: string): Promise<void> {
+  async load(version?: string, checksum?: string): Promise<void> {
     const stored = await this.modelStore.get('categorizer');
     const storedVersion = await this.modelStore.getVersion('categorizer');
 
-    let modelBuffer: ArrayBuffer;
-
+    // Use cache when version matches and checksum (if provided) is valid
     if (stored && storedVersion === (version ?? storedVersion)) {
-      modelBuffer = stored;
-    } else if (version) {
-      const resp = await fetch(`${this.cdnBaseUrl}/models/categorizer/${version}/model.onnx`);
-      if (!resp.ok) throw new Error(`Failed to fetch categorizer model: ${resp.status}`);
-      modelBuffer = await resp.arrayBuffer();
-      await this.modelStore.set('categorizer', version, modelBuffer);
-
-      // Also fetch category map
-      const mapResp = await fetch(`${this.cdnBaseUrl}/models/categorizer/${version}/categories.json`);
-      const map = await mapResp.json();
-      this.categoryIds = map.category_ids;
-    } else {
-      throw new Error('No categorizer model in store and no version specified');
+      if (!checksum || (await sha256Hex(stored)) === checksum) {
+        this.session = await this.sessionFactory(stored);
+        return;
+      }
+      // Checksum mismatch — purge corrupt cache entry before re-downloading
+      await this.modelStore.delete('categorizer');
     }
+
+    if (!version) throw new Error('No categorizer model in store and no version specified');
+
+    const url = `${this.cdnBaseUrl}/models/categorizer/${version}/model.onnx`;
+    const modelBuffer = await fetchAndVerify(url, 'categorizer', checksum);
+    await this.modelStore.set('categorizer', version, modelBuffer);
+
+    const mapResp = await fetch(`${this.cdnBaseUrl}/models/categorizer/${version}/categories.json`);
+    const map = await mapResp.json() as { category_ids: string[] };
+    this.categoryIds = map.category_ids;
 
     this.session = await this.sessionFactory(modelBuffer);
   }
@@ -189,22 +234,25 @@ export class AnomalyDetector {
     private readonly cdnBaseUrl: string
   ) {}
 
-  async load(version?: string): Promise<void> {
+  async load(version?: string, checksum?: string): Promise<void> {
     const stored = await this.modelStore.get('anomaly');
     const storedVersion = await this.modelStore.getVersion('anomaly');
 
-    let modelBuffer: ArrayBuffer;
-
+    // Use cache when version matches and checksum (if provided) is valid
     if (stored && storedVersion === (version ?? storedVersion)) {
-      modelBuffer = stored;
-    } else if (version) {
-      const resp = await fetch(`${this.cdnBaseUrl}/models/anomaly/${version}/model.onnx`);
-      if (!resp.ok) throw new Error(`Failed to fetch anomaly model: ${resp.status}`);
-      modelBuffer = await resp.arrayBuffer();
-      await this.modelStore.set('anomaly', version, modelBuffer);
-    } else {
-      throw new Error('No anomaly model in store and no version specified');
+      if (!checksum || (await sha256Hex(stored)) === checksum) {
+        this.session = await this.sessionFactory(stored);
+        return;
+      }
+      // Checksum mismatch — purge corrupt cache entry before re-downloading
+      await this.modelStore.delete('anomaly');
     }
+
+    if (!version) throw new Error('No anomaly model in store and no version specified');
+
+    const url = `${this.cdnBaseUrl}/models/anomaly/${version}/model.onnx`;
+    const modelBuffer = await fetchAndVerify(url, 'anomaly', checksum);
+    await this.modelStore.set('anomaly', version, modelBuffer);
 
     this.session = await this.sessionFactory(modelBuffer);
   }
