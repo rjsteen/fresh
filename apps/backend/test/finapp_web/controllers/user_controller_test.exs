@@ -13,6 +13,90 @@ defmodule FinappWeb.UserControllerTest do
     put_req_header(conn, "authorization", "Bearer #{token}")
   end
 
+  describe "PATCH /api/v1/users/me" do
+    test "updates timezone and region", %{conn: conn} do
+      user = create_user(%{"region" => "us", "timezone" => "UTC"})
+
+      resp =
+        conn
+        |> authed(user)
+        |> patch("/api/v1/users/me", %{"timezone" => "America/New_York", "region" => "eu"})
+
+      assert resp.status == 200
+      body = json_response(resp, 200)
+      assert body["timezone"] == "America/New_York"
+      assert body["region"] == "eu"
+      assert Map.has_key?(body, "password_hash") == false
+
+      updated = Repo.get(User, user.id)
+      assert updated.timezone == "America/New_York"
+      assert updated.region == "eu"
+    end
+
+    test "updates password when current_password is correct", %{conn: conn} do
+      user = create_user()
+
+      resp =
+        conn
+        |> authed(user)
+        |> patch("/api/v1/users/me", %{
+          "current_password" => "password123",
+          "new_password" => "newpass456"
+        })
+
+      assert resp.status == 200
+
+      updated = Repo.get(User, user.id)
+      assert Bcrypt.verify_pass("newpass456", updated.password_hash)
+    end
+
+    test "returns 401 when current_password is wrong", %{conn: conn} do
+      user = create_user()
+
+      resp =
+        conn
+        |> authed(user)
+        |> patch("/api/v1/users/me", %{
+          "current_password" => "wrongpass",
+          "new_password" => "newpass456"
+        })
+
+      assert json_response(resp, 401) == %{"error" => "invalid_password"}
+
+      unchanged = Repo.get(User, user.id)
+      assert Bcrypt.verify_pass("password123", unchanged.password_hash)
+    end
+
+    test "returns 401 when new_password given but current_password is missing", %{conn: conn} do
+      user = create_user()
+
+      resp =
+        conn
+        |> authed(user)
+        |> patch("/api/v1/users/me", %{"new_password" => "newpass456"})
+
+      assert json_response(resp, 401) == %{"error" => "invalid_password"}
+    end
+
+    test "returns 422 for invalid region", %{conn: conn} do
+      user = create_user()
+
+      resp =
+        conn
+        |> authed(user)
+        |> patch("/api/v1/users/me", %{"region" => "au"})
+
+      assert resp.status == 422
+      body = json_response(resp, 422)
+      assert Map.has_key?(body, "errors")
+    end
+
+    test "returns 401 for unauthenticated request", %{conn: conn} do
+      resp = patch(conn, "/api/v1/users/me", %{"timezone" => "UTC"})
+      assert resp.status == 401
+    end
+  end
+
   describe "DELETE /api/v1/users/me" do
     test "returns 204 and deletes the user with correct password", %{conn: conn} do
       user = create_user()

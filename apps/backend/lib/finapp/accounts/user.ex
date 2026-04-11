@@ -30,6 +30,13 @@ defmodule Finapp.Accounts.User do
     |> put_password_hash(attrs["password"] || attrs[:password])
   end
 
+  def update_changeset(user, attrs) do
+    user
+    |> cast(attrs, [:timezone, :region])
+    |> validate_inclusion(:region, ["us", "eu"])
+    |> put_password_hash(attrs["new_password"] || attrs[:new_password])
+  end
+
   defp put_password_hash(changeset, nil), do: changeset
   defp put_password_hash(changeset, password) do
     put_change(changeset, :password_hash, Bcrypt.hash_pwd_salt(password))

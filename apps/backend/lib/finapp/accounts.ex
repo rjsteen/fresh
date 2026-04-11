@@ -14,6 +14,30 @@ defmodule Finapp.Accounts do
     end
   end
 
+  def update_user(%User{} = user, attrs) do
+    with :ok <- verify_password_change(user, attrs) do
+      user
+      |> User.update_changeset(attrs)
+      |> Repo.update()
+    end
+  end
+
+  defp verify_password_change(user, attrs) do
+    case attrs["new_password"] || attrs[:new_password] do
+      nil ->
+        :ok
+
+      _new_password ->
+        current = attrs["current_password"] || attrs[:current_password]
+
+        if current && Bcrypt.verify_pass(current, user.password_hash) do
+          :ok
+        else
+          {:error, :invalid_password}
+        end
+    end
+  end
+
   def get_user(id), do: Repo.get(User, id)
 
   def get_device_by_user(user_id) do
