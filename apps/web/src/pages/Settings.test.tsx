@@ -19,9 +19,21 @@ vi.mock('../App', () => ({ useDb: vi.fn() }));
 vi.mock('../hooks/useAuth', () => ({
   useAuth: vi.fn(() => ({ logout: vi.fn() })),
 }));
+vi.mock('../cloud/oauth', () => ({
+  getStoredProvider: vi.fn(() => null),
+  clearCloudAuth: vi.fn(),
+  initiateDropboxOAuth: vi.fn(),
+  initiateGDriveOAuth: vi.fn(),
+}));
 
 import { useDb } from '../App';
 import { useAuth } from '../hooks/useAuth';
+import {
+  getStoredProvider,
+  clearCloudAuth,
+  initiateDropboxOAuth,
+  initiateGDriveOAuth,
+} from '../cloud/oauth';
 
 // ---------------------------------------------------------------------------
 // Per-test DB + fetch setup
@@ -632,5 +644,107 @@ describe('Settings — danger zone', () => {
         (c[1] as RequestInit).method === 'DELETE'
     );
     expect(deleteCall).toBeFalsy();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Cloud backup section
+// ---------------------------------------------------------------------------
+
+describe('Settings — cloud backup', () => {
+  it('shows "None" when no provider is connected', async () => {
+    (getStoredProvider as Mock).mockReturnValue(null);
+    renderWithProviders(<Settings />);
+    await waitFor(() => {
+      expect(
+        screen.getByText(/none — your data is stored locally only/i)
+      ).toBeInTheDocument();
+    });
+  });
+
+  it('shows connect buttons when not connected', async () => {
+    (getStoredProvider as Mock).mockReturnValue(null);
+    renderWithProviders(<Settings />);
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /connect dropbox/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /connect google drive/i })).toBeInTheDocument();
+    });
+  });
+
+  it('shows "Connected: Dropbox" and Disconnect button when dropbox is connected', async () => {
+    (getStoredProvider as Mock).mockReturnValue('dropbox');
+    renderWithProviders(<Settings />);
+    await waitFor(() => {
+      expect(screen.getByText(/connected: dropbox/i)).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /disconnect/i })).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /connect dropbox/i })).not.toBeInTheDocument();
+    });
+  });
+
+  it('shows "Connected: Google Drive" when gdrive is connected', async () => {
+    (getStoredProvider as Mock).mockReturnValue('gdrive');
+    renderWithProviders(<Settings />);
+    await waitFor(() => {
+      expect(screen.getByText(/connected: google drive/i)).toBeInTheDocument();
+    });
+  });
+
+  it('clicking Disconnect calls clearCloudAuth and reverts UI to disconnected state', async () => {
+    const user = userEvent.setup();
+    (getStoredProvider as Mock).mockReturnValue('dropbox');
+    renderWithProviders(<Settings />);
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /disconnect/i })).toBeInTheDocument()
+    );
+    await user.click(screen.getByRole('button', { name: /disconnect/i }));
+
+    expect(clearCloudAuth).toHaveBeenCalled();
+    await waitFor(() => {
+      expect(
+        screen.getByText(/none — your data is stored locally only/i)
+      ).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /disconnect/i })).not.toBeInTheDocument();
+    });
+  });
+
+  it('shows error banner when Dropbox connect fails', async () => {
+    const user = userEvent.setup();
+    (getStoredProvider as Mock).mockReturnValue(null);
+    (initiateDropboxOAuth as Mock).mockRejectedValue(
+      new Error('VITE_DROPBOX_CLIENT_ID is not configured')
+    );
+    renderWithProviders(<Settings />);
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /connect dropbox/i })).toBeInTheDocument()
+    );
+    await user.click(screen.getByRole('button', { name: /connect dropbox/i }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/VITE_DROPBOX_CLIENT_ID is not configured/i)
+      ).toBeInTheDocument();
+    });
+  });
+
+  it('shows error banner when Google Drive connect fails', async () => {
+    const user = userEvent.setup();
+    (getStoredProvider as Mock).mockReturnValue(null);
+    (initiateGDriveOAuth as Mock).mockRejectedValue(
+      new Error('VITE_GDRIVE_CLIENT_ID is not configured')
+    );
+    renderWithProviders(<Settings />);
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /connect google drive/i })).toBeInTheDocument()
+    );
+    await user.click(screen.getByRole('button', { name: /connect google drive/i }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/VITE_GDRIVE_CLIENT_ID is not configured/i)
+      ).toBeInTheDocument();
+    });
   });
 });
