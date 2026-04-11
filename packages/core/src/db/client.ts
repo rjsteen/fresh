@@ -48,16 +48,10 @@ export class DbClient {
       if (appliedSet.has(version)) continue;
 
       await this.driver.transaction(async (tx) => {
-        // SQLite doesn't support multiple statements in one execute call uniformly,
-        // so we split on ';' and run each statement individually.
-        const statements = sql
-          .split(';')
-          .map((s) => s.trim())
-          .filter((s) => s.length > 0);
-
-        for (const stmt of statements) {
-          await tx.execute(stmt);
-        }
+        // Pass the entire migration SQL as one call so that multi-statement DDL
+        // (including CREATE TRIGGER bodies with internal semicolons) is handled
+        // correctly by the driver's db.run() path.
+        await tx.execute(sql);
 
         await tx.execute(
           'INSERT INTO schema_versions (version) VALUES (?)',

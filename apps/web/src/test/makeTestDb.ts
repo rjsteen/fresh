@@ -10,6 +10,12 @@ class InMemoryDriver implements SqliteDriver {
   constructor(private db: import('sql.js').Database) {}
 
   async execute(sql: string, params: (string | number | null)[] = []): Promise<QueryResult> {
+    if (params.length === 0) {
+      // db.run() supports multi-statement DDL and trigger bodies with internal semicolons.
+      // db.prepare() only handles a single statement and rejects trigger syntax.
+      this.db.run(sql);
+      return { rows: [], rowsAffected: this.db.getRowsModified() };
+    }
     const stmt = this.db.prepare(sql);
     stmt.run(params as never[]);
     const rowsAffected = this.db.getRowsModified();
