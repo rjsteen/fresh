@@ -213,8 +213,9 @@ export function Dashboard() {
       ),
   });
 
+  const currentMonth = format(startOfMonth(new Date()), 'yyyy-MM');
   const { data: monthSpend = 0 } = useQuery<number>({
-    queryKey: ['dashboard-month-spend'],
+    queryKey: ['dashboard-month-spend', currentMonth],
     queryFn: async () => {
       const now = new Date();
       const start = format(startOfMonth(now), 'yyyy-MM-dd');
