@@ -1,7 +1,42 @@
 import { useQuery } from '@tanstack/react-query';
+import { Link } from 'react-router-dom';
 import styled from 'styled-components';
-import { format } from 'date-fns';
+import { format, parse, startOfMonth } from 'date-fns';
 import { API, authHeaders } from '../utils/api';
+import { useDb } from '../App';
+import { getAccounts } from '@fresh/core/db';
+import type { Account } from '@fresh/core/db';
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function formatCurrency(amount: number, currency = 'USD'): string {
+  return new Intl.NumberFormat(undefined, { style: 'currency', currency }).format(amount);
+}
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+interface SyncJob {
+  id: string;
+  connection_type: string;
+  status: string;
+  last_synced_at: string | null;
+  sync_schedule: string;
+}
+
+interface RecentTx {
+  id: string;
+  date: string;
+  merchant_name: string | null;
+  description: string;
+  amount: number;
+  currency: string;
+  pending: number;
+  category_name: string | null;
+}
 
 // ---------------------------------------------------------------------------
 // Styled components
@@ -49,7 +84,7 @@ const CardValue = styled.div`
   letter-spacing: -0.5px;
 `;
 
-const MobileCallout = styled.div`
+const EmptyState = styled.div`
   background: ${({ theme }) => theme.color.green50};
   border: 1px solid ${({ theme }) => theme.color.green100};
   border-radius: ${({ theme }) => theme.radius.xl};
@@ -57,22 +92,46 @@ const MobileCallout = styled.div`
   text-align: center;
 `;
 
-const CalloutTitle = styled.h3`
+const EmptyStateTitle = styled.h3`
   font-size: ${({ theme }) => theme.font.size.lg};
   font-weight: ${({ theme }) => theme.font.weight.semibold};
   color: ${({ theme }) => theme.color.text};
   margin-bottom: ${({ theme }) => theme.space[2]};
 `;
 
-const CalloutBody = styled.p`
+const EmptyStateBody = styled.p`
   font-size: ${({ theme }) => theme.font.size.base};
   color: ${({ theme }) => theme.color.textMuted};
   max-width: 420px;
-  margin: 0 auto;
+  margin: 0 auto ${({ theme }) => theme.space[5]};
   line-height: ${({ theme }) => theme.font.lineHeight.relaxed};
 `;
 
-const SyncTable = styled.table`
+const CTALink = styled(Link)`
+  display: inline-block;
+  background: ${({ theme }) => theme.color.green500};
+  color: ${({ theme }) => theme.color.textInvert};
+  font-size: ${({ theme }) => theme.font.size.sm};
+  font-weight: ${({ theme }) => theme.font.weight.semibold};
+  padding: ${({ theme }) => `${theme.space[2]} ${theme.space[5]}`};
+  border-radius: ${({ theme }) => theme.radius.md};
+  text-decoration: none;
+
+  &:hover {
+    background: ${({ theme }) => theme.color.green600};
+  }
+`;
+
+const SectionHeading = styled.div`
+  font-size: ${({ theme }) => theme.font.size.sm};
+  font-weight: ${({ theme }) => theme.font.weight.semibold};
+  color: ${({ theme }) => theme.color.textMuted};
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: ${({ theme }) => theme.space[3]};
+`;
+
+const DataTable = styled.table`
   width: 100%;
   border-collapse: collapse;
 
@@ -99,6 +158,12 @@ const SyncTable = styled.table`
   }
 `;
 
+const Amount = styled.span<{ $negative: boolean }>`
+  font-weight: ${({ theme }) => theme.font.weight.medium};
+  color: ${({ $negative, theme }) =>
+    $negative ? theme.color.danger : theme.color.green600};
+`;
+
 const StatusBadge = styled.span<{ $status: string }>`
   display: inline-block;
   padding: 2px ${({ theme }) => theme.space[2]};
@@ -117,16 +182,10 @@ const StatusBadge = styled.span<{ $status: string }>`
 // Component
 // ---------------------------------------------------------------------------
 
-interface SyncJob {
-  id: string;
-  connection_type: string;
-  status: string;
-  last_synced_at: string | null;
-  sync_schedule: string;
-}
-
 export function Dashboard() {
-  const { data: jobs = [], isLoading } = useQuery<SyncJob[]>({
+  const db = useDb();
+
+  const { data: jobs = [] } = useQuery<SyncJob[]>({
     queryKey: ['sync-jobs'],
     queryFn: async () => {
       const res = await fetch(`${API}/api/v1/sync/jobs`, { headers: authHeaders() });
@@ -136,7 +195,43 @@ export function Dashboard() {
     },
   });
 
-  const activeJobs = jobs.filter((j) => j.status === 'active');
+  const { data: accounts = [] } = useQuery<Account[]>({
+    queryKey: ['dashboard-accounts'],
+    queryFn: () => getAccounts(db.raw),
+  });
+
+  const { data: recentTxns = [] } = useQuery<RecentTx[]>({
+    queryKey: ['dashboard-recent-txns'],
+    queryFn: () =>
+      db.raw.query<RecentTx>(
+        `SELECT t.id, t.date, t.merchant_name, t.description, t.amount, t.currency,
+                t.pending, c.name as category_name
+         FROM transactions t
+         LEFT JOIN categories c ON c.id = t.category_id
+         ORDER BY t.date DESC, t.created_at DESC
+         LIMIT 10`
+      ),
+  });
+
+  const currentMonth = format(startOfMonth(new Date()), 'yyyy-MM');
+  const { data: monthSpend = 0 } = useQuery<number>({
+    queryKey: ['dashboard-month-spend', currentMonth],
+    queryFn: async () => {
+      const now = new Date();
+      const start = format(startOfMonth(now), 'yyyy-MM-dd');
+      const end = format(now, 'yyyy-MM-dd');
+      const rows = await db.raw.query<{ total: number }>(
+        `SELECT COALESCE(ABS(SUM(amount)), 0) as total
+         FROM transactions
+         WHERE amount < 0 AND pending = 0 AND date >= ? AND date <= ?`,
+        [start, end]
+      );
+      return rows[0]?.total ?? 0;
+    },
+  });
+
+  const netWorth = accounts.reduce((sum, a) => sum + a.current_balance, 0);
+  const hasAccounts = accounts.length > 0;
 
   return (
     <Page>
@@ -144,27 +239,74 @@ export function Dashboard() {
 
       <CardRow>
         <Card>
-          <CardLabel>Connected Banks</CardLabel>
-          <CardValue>{isLoading ? '–' : jobs.length}</CardValue>
+          <CardLabel>Net Worth</CardLabel>
+          <CardValue data-testid="net-worth">
+            {hasAccounts ? formatCurrency(netWorth) : '—'}
+          </CardValue>
         </Card>
         <Card>
-          <CardLabel>Active Syncs</CardLabel>
-          <CardValue>{isLoading ? '–' : activeJobs.length}</CardValue>
+          <CardLabel>Spent This Month</CardLabel>
+          <CardValue data-testid="month-spend">
+            {hasAccounts ? formatCurrency(monthSpend) : '—'}
+          </CardValue>
+        </Card>
+        <Card>
+          <CardLabel>Accounts</CardLabel>
+          <CardValue data-testid="account-count">
+            {hasAccounts ? accounts.length : '—'}
+          </CardValue>
         </Card>
       </CardRow>
 
-      <MobileCallout>
-        <CalloutTitle>Your data lives on your device</CalloutTitle>
-        <CalloutBody>
-          Transactions, balances, and budgets are stored in an encrypted database on your phone.
-          Open the Fresh mobile app to view and manage your finances.
-        </CalloutBody>
-      </MobileCallout>
+      {!hasAccounts ? (
+        <EmptyState>
+          <EmptyStateTitle>No accounts yet</EmptyStateTitle>
+          <EmptyStateBody>
+            Connect a bank account to start tracking your finances. Your data stays on your device.
+          </EmptyStateBody>
+          <CTALink to="/accounts">Connect a bank</CTALink>
+        </EmptyState>
+      ) : (
+        <Card>
+          <SectionHeading>Recent Transactions</SectionHeading>
+          {recentTxns.length === 0 ? (
+            <p style={{ fontSize: '13px', color: '#7da98a', margin: 0 }}>No transactions yet.</p>
+          ) : (
+            <DataTable>
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Merchant</th>
+                  <th>Category</th>
+                  <th style={{ textAlign: 'right' }}>Amount</th>
+                </tr>
+              </thead>
+              <tbody>
+                {recentTxns.map((tx) => (
+                  <tr key={tx.id}>
+                    <td>{format(parse(tx.date, 'yyyy-MM-dd', new Date()), 'MMM d')}</td>
+                    <td>{tx.merchant_name ?? tx.description}</td>
+                    <td style={{ color: tx.category_name ? undefined : '#7da98a' }}>
+                      {tx.category_name ?? '—'}
+                    </td>
+                    <td style={{ textAlign: 'right' }}>
+                      <Amount $negative={tx.amount < 0}>
+                        {tx.amount < 0 ? '−' : '+'}
+                        {formatCurrency(Math.abs(tx.amount), tx.currency)}
+                      </Amount>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </DataTable>
+          )}
+        </Card>
+      )}
 
       {jobs.length > 0 && (
         <Card>
-          <CardLabel style={{ marginBottom: '12px' }}>Sync Jobs</CardLabel>
-          <SyncTable>
+          <SectionHeading>Sync Jobs</SectionHeading>
+          <DataTable>
             <thead>
               <tr>
                 <th>Provider</th>
@@ -176,14 +318,24 @@ export function Dashboard() {
             <tbody>
               {jobs.map((job) => (
                 <tr key={job.id}>
-                  <td>{job.connection_type === 'gocardless' ? 'GoCardless' : 'SimpleFIN'}</td>
-                  <td><StatusBadge $status={job.status}>{job.status}</StatusBadge></td>
-                  <td>{job.last_synced_at ? format(new Date(job.last_synced_at), 'MMM d, h:mm a') : '—'}</td>
-                  <td style={{ fontFamily: 'monospace', fontSize: '12px' }}>{job.sync_schedule}</td>
+                  <td>
+                    {job.connection_type === 'gocardless' ? 'GoCardless' : 'SimpleFIN'}
+                  </td>
+                  <td>
+                    <StatusBadge $status={job.status}>{job.status}</StatusBadge>
+                  </td>
+                  <td>
+                    {job.last_synced_at
+                      ? format(new Date(job.last_synced_at), 'MMM d, h:mm a')
+                      : '—'}
+                  </td>
+                  <td style={{ fontFamily: 'monospace', fontSize: '12px' }}>
+                    {job.sync_schedule}
+                  </td>
                 </tr>
               ))}
             </tbody>
-          </SyncTable>
+          </DataTable>
         </Card>
       )}
     </Page>
