@@ -5,7 +5,7 @@
 import React from 'react';
 
 // Strip RN-specific props that are invalid on DOM elements
-function domProps({ children, testID, style: _s, numberOfLines: _nl, contentContainerStyle: _ccs, ...rest }: Record<string, unknown>) {
+function domProps({ children: _children, testID, style: _s, numberOfLines: _nl, contentContainerStyle: _ccs, ...rest }: Record<string, unknown>) {
   return { 'data-testid': testID, ...rest };
 }
 
