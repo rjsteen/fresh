@@ -29,19 +29,15 @@ interface Filters {
   search: string;
 }
 
-const now = new Date();
-const DEFAULT_FILTERS: Filters = {
-  accountId: null,
-  startDate: format(startOfMonth(subMonths(now, 2)), 'yyyy-MM-dd'),
-  endDate: format(endOfMonth(now), 'yyyy-MM-dd'),
-  search: '',
-};
-
-const DATE_PRESETS = [
-  { label: 'This month', start: format(startOfMonth(now), 'yyyy-MM-dd'), end: format(endOfMonth(now), 'yyyy-MM-dd') },
-  { label: 'Last month', start: format(startOfMonth(subMonths(now, 1)), 'yyyy-MM-dd'), end: format(endOfMonth(subMonths(now, 1)), 'yyyy-MM-dd') },
-  { label: '3 months', start: format(startOfMonth(subMonths(now, 2)), 'yyyy-MM-dd'), end: format(endOfMonth(now), 'yyyy-MM-dd') },
-];
+export function makeDefaultFilters(): Filters {
+  const now = new Date();
+  return {
+    accountId: null,
+    startDate: format(startOfMonth(subMonths(now, 2)), 'yyyy-MM-dd'),
+    endDate: format(endOfMonth(now), 'yyyy-MM-dd'),
+    search: '',
+  };
+}
 
 function TxItem({ tx }: { tx: Transaction }) {
   const isCredit = tx.amount >= 0;
@@ -67,8 +63,17 @@ function TxItem({ tx }: { tx: Transaction }) {
 
 export function TransactionsScreen() {
   const db = useDb();
-  const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
-  const [pendingFilters, setPendingFilters] = useState<Filters>(DEFAULT_FILTERS);
+  const [filters, setFilters] = useState<Filters>(makeDefaultFilters);
+  const [pendingFilters, setPendingFilters] = useState<Filters>(makeDefaultFilters);
+
+  const DATE_PRESETS = useMemo(() => {
+    const now = new Date();
+    return [
+      { label: 'This month', start: format(startOfMonth(now), 'yyyy-MM-dd'), end: format(endOfMonth(now), 'yyyy-MM-dd') },
+      { label: 'Last month', start: format(startOfMonth(subMonths(now, 1)), 'yyyy-MM-dd'), end: format(endOfMonth(subMonths(now, 1)), 'yyyy-MM-dd') },
+      { label: '3 months', start: format(startOfMonth(subMonths(now, 2)), 'yyyy-MM-dd'), end: format(endOfMonth(now), 'yyyy-MM-dd') },
+    ];
+  }, []);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [page, setPage] = useState(0);
 
@@ -102,16 +107,17 @@ export function TransactionsScreen() {
   }
 
   function clearFilters() {
-    const reset = { ...DEFAULT_FILTERS };
+    const reset = makeDefaultFilters();
     setPendingFilters(reset);
     setFilters(reset);
     setPage(0);
     setSheetOpen(false);
   }
 
+  const defaultDates = makeDefaultFilters();
   const activeFilterCount = [
     filters.accountId !== null,
-    filters.startDate !== DEFAULT_FILTERS.startDate || filters.endDate !== DEFAULT_FILTERS.endDate,
+    filters.startDate !== defaultDates.startDate || filters.endDate !== defaultDates.endDate,
     filters.search.length > 0,
   ].filter(Boolean).length;
 

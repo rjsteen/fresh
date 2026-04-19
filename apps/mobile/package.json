@@ -10,7 +10,9 @@
     "build:ios": "eas build --platform ios",
     "build:android": "eas build --platform android",
     "type-check": "tsc --noEmit",
-    "lint": "eslint src/"
+    "lint": "eslint src/",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@fresh/core": "workspace:*",
@@ -33,7 +35,15 @@
     "date-fns": "^4.1.0"
   },
   "devDependencies": {
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
     "@types/react": "~18.3.12",
-    "typescript": "^5.7.2"
+    "@types/sql.js": "^1.4.9",
+    "@vitejs/plugin-react": "^4.3.4",
+    "jsdom": "^29.0.2",
+    "sql.js": "^1.14.1",
+    "typescript": "^5.7.2",
+    "vitest": "^4.1.3"
   }
 }

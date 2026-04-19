@@ -110,6 +110,11 @@ export function AccountsScreen() {
       const job = syncJobs.find((j) => j.id === jobId);
       if (job) setSyncOverride((prev) => ({ ...prev, [job.account_token_ref]: 'syncing' }));
     },
+    onSuccess: (_data, jobId) => {
+      const job = syncJobs.find((j) => j.id === jobId);
+      if (job) setSyncOverride((prev) => ({ ...prev, [job.account_token_ref]: 'idle' }));
+      qc.invalidateQueries({ queryKey: ['sync-jobs'] });
+    },
     onError: (e: Error, jobId) => {
       const job = syncJobs.find((j) => j.id === jobId);
       if (job) setSyncOverride((prev) => ({ ...prev, [job.account_token_ref]: 'idle' }));
@@ -119,11 +124,11 @@ export function AccountsScreen() {
 
   const removeMutation = useMutation({
     mutationFn: async ({ accountId, jobId }: { accountId: string; jobId?: string }) => {
+      await db.raw.execute('DELETE FROM accounts WHERE id = ?', [accountId]);
       if (jobId) {
         const res = await apiFetch(`${API}/api/v1/connections/${jobId}`, { method: 'DELETE' });
         if (!res.ok) throw new Error('Failed to remove connection');
       }
-      await db.raw.execute('DELETE FROM accounts WHERE id = ?', [accountId]);
     },
     onSuccess: () => {
       refetchAccounts();
