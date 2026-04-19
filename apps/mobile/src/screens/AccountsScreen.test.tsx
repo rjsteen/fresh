@@ -42,7 +42,7 @@ beforeEach(async () => {
   const db = await makeTestDb();
   client = db.client;
   (useDb as Mock).mockReturnValue(client);
-  (useAuthStore as Mock).mockImplementation((selector: (s: { token: string }) => unknown) =>
+  (useAuthStore as unknown as Mock).mockImplementation((selector: (s: { token: string }) => unknown) =>
     selector({ token: 'test-token' })
   );
   vi.stubGlobal('fetch', vi.fn());
@@ -57,7 +57,7 @@ afterEach(() => {
 // Seed helpers
 // ---------------------------------------------------------------------------
 
-async function seedAccount(overrides: { id?: string; name?: string; syncTokenRef?: string } = {}) {
+async function seedAccount(overrides: { id?: string; name?: string; syncTokenRef?: string | null } = {}) {
   const id = overrides.id ?? 'acc-1';
   await client.raw.execute(
     `INSERT INTO accounts (id, name, institution, type, currency, current_balance, connection_type, sync_token_ref)
@@ -204,8 +204,8 @@ describe('removeMutation', () => {
     });
 
     // fetch should only have been called for sync/jobs, not for connections
-    const deleteCalls = (fetch as Mock).mock.calls.filter(([url]: [string]) =>
-      url.includes('/connections/')
+    const deleteCalls = (fetch as Mock).mock.calls.filter((args: unknown[]) =>
+      (args[0] as string).includes('/connections/')
     );
     expect(deleteCalls).toHaveLength(0);
   });
