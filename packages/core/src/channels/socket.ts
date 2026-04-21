@@ -103,6 +103,11 @@ export class FinanceSocket {
     this.deviceChannel?.push('alert:deregister', { rule_token_ref: ruleTokenRef });
   }
 
+  /** Notify the backend that an alert rule fired so it can relay a push notification */
+  notifyAlertFired(ruleTokenRef: string): void {
+    this.deviceChannel?.push('alert:fire', { rule_token_ref: ruleTokenRef });
+  }
+
   private joinDeviceChannel(): void {
     this.deviceChannel = this.socket.channel('device:me', {});
 
