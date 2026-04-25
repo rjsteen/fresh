@@ -113,7 +113,7 @@ export async function processSyncBatch(
       }
     }
 
-    // Evaluate transaction-scoped alert rules (large_transaction, merchant)
+    // Evaluate transaction-scoped alert rules (large_transaction, merchant only)
     try {
       const fired = await ruleEngine.evaluateForTransaction(db, saved);
       for (const event of fired) {
@@ -129,8 +129,7 @@ export async function processSyncBatch(
     }
   }
 
-  // Evaluate balance/budget rules once after the full batch
-  // (large_transaction/merchant return null with a null tx, so no double-firing)
+  // Evaluate balance/budget rules once after the full batch is settled
   try {
     const fired = await ruleEngine.evaluateBalanceRules(db);
     for (const event of fired) {

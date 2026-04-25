@@ -180,20 +180,6 @@ export const MIGRATIONS: Record<number, string> = {
     );
   `,
 
-  7: `
-    -- Deduplication log for fired alert rules.
-    -- For transaction-scoped rules, transaction_id is set; look up by (rule_id, transaction_id).
-    -- For balance/budget rules, transaction_id is NULL; use a time-based cooldown instead.
-    CREATE TABLE IF NOT EXISTS fired_alerts (
-      id             TEXT PRIMARY KEY,
-      rule_id        TEXT NOT NULL REFERENCES alert_rules(id) ON DELETE CASCADE,
-      transaction_id TEXT REFERENCES transactions(id) ON DELETE CASCADE,
-      fired_at       TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-    CREATE INDEX IF NOT EXISTS idx_fired_alerts_lookup
-      ON fired_alerts(rule_id, transaction_id);
-  `,
-
   6: `
     -- accounts triggers
     CREATE TRIGGER IF NOT EXISTS trg_accounts_insert
@@ -455,6 +441,20 @@ export const MIGRATIONS: Record<number, string> = {
       INSERT INTO change_log (table_name, row_id, operation, payload)
       VALUES ('sync_state', OLD.account_id, 'delete', NULL);
     END;
+  `,
+
+  7: `
+    -- Deduplication log for fired alert rules.
+    -- For transaction-scoped rules, transaction_id is set; look up by (rule_id, transaction_id).
+    -- For balance/budget rules, transaction_id is NULL; use a time-based cooldown instead.
+    CREATE TABLE IF NOT EXISTS fired_alerts (
+      id             TEXT PRIMARY KEY,
+      rule_id        TEXT NOT NULL REFERENCES alert_rules(id) ON DELETE CASCADE,
+      transaction_id TEXT REFERENCES transactions(id) ON DELETE CASCADE,
+      fired_at       TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_fired_alerts_lookup
+      ON fired_alerts(rule_id, transaction_id);
   `,
 };
 

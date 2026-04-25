@@ -124,23 +124,26 @@ const EVALUATORS: Record<string, RuleEvaluator> = {
   merchant: evaluateMerchantWatch,
 };
 
+/** Rule types that require a specific transaction to evaluate. */
+const TX_SCOPED_RULE_TYPES = new Set(['large_transaction', 'merchant']);
+/** Rule types that evaluate against DB state (no transaction context needed). */
+const BALANCE_RULE_TYPES = new Set(['balance_low', 'budget_threshold']);
+
 // ---------------------------------------------------------------------------
 // Rule engine
 // ---------------------------------------------------------------------------
 
 export class BudgetRuleEngine {
-  /**
-   * Evaluate all enabled rules after a new transaction lands.
-   * Pass `transaction = null` for rules that don't need a specific transaction (e.g. balance).
-   */
-  async evaluate(
+  private async evaluate(
     db: SqliteDriver,
-    transaction: Transaction | null
+    transaction: Transaction | null,
+    allowedTypes: Set<string>
   ): Promise<RuleFiredEvent[]> {
     const rules = await getEnabledAlertRules(db);
     const fired: RuleFiredEvent[] = [];
 
     for (const rule of rules) {
+      if (!allowedTypes.has(rule.rule_type)) continue;
       const evaluator = EVALUATORS[rule.rule_type];
       if (!evaluator) {
         console.warn(`[RuleEngine] Unknown rule type: ${rule.rule_type}`);
@@ -158,17 +161,17 @@ export class BudgetRuleEngine {
     return fired;
   }
 
-  /** Run balance-based rules (no transaction context needed) */
+  /** Run balance/budget rules once after all transactions in a batch are settled. */
   async evaluateBalanceRules(db: SqliteDriver): Promise<RuleFiredEvent[]> {
-    return this.evaluate(db, null);
+    return this.evaluate(db, null, BALANCE_RULE_TYPES);
   }
 
-  /** Run transaction-scoped rules after a new transaction is written */
+  /** Run transaction-scoped rules (large_transaction, merchant) for a single transaction. */
   async evaluateForTransaction(
     db: SqliteDriver,
     transaction: Transaction
   ): Promise<RuleFiredEvent[]> {
-    return this.evaluate(db, transaction);
+    return this.evaluate(db, transaction, TX_SCOPED_RULE_TYPES);
   }
 }
 
