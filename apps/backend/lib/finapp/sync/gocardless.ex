@@ -22,7 +22,7 @@ defmodule Finapp.Sync.GoCardless do
   @doc "Create a requisition and return the authorization link for the user"
   def create_requisition(institution_id, redirect_url, reference) do
     with {:ok, token} <- get_access_token(),
-         {:ok, resp} <- Req.post(
+         {:ok, resp} <- req_post(
            "#{@base_url}/api/v2/requisitions/",
            headers: auth_headers(token),
            json: %{
@@ -58,7 +58,7 @@ defmodule Finapp.Sync.GoCardless do
   defp do_fetch(account_id, token, cursor) do
     params = if cursor, do: [date_from: cursor], else: []
 
-    case Req.get(
+    case req_get(
            "#{@base_url}/api/v2/accounts/#{account_id}/transactions/",
            headers: auth_headers(token),
            params: params,
@@ -124,7 +124,7 @@ defmodule Finapp.Sync.GoCardless do
     secret_key = Application.get_env(:finapp, :gocardless)[:secret_key] ||
       System.get_env("GOCARDLESS_SECRET_KEY")
 
-    case Req.post(
+    case req_post(
            "#{@base_url}/api/v2/token/new/",
            json: %{secret_id: secret_id, secret_key: secret_key}
          ) do
@@ -136,5 +136,21 @@ defmodule Finapp.Sync.GoCardless do
 
   defp decrypt_account_id(encrypted_ref) do
     Finapp.Vault.decrypt(encrypted_ref)
+  end
+
+  defp req_plug, do: Application.get_env(:finapp, __MODULE__, [])[:req_plug]
+
+  defp req_post(url, opts) do
+    case req_plug() do
+      nil -> Req.post(url, opts)
+      plug -> Req.post(url, Keyword.put(opts, :plug, plug))
+    end
+  end
+
+  defp req_get(url, opts) do
+    case req_plug() do
+      nil -> Req.get(url, opts)
+      plug -> Req.get(url, Keyword.put(opts, :plug, plug))
+    end
   end
 end

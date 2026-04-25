@@ -9,7 +9,9 @@ defmodule Finapp.MixProject do
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
       aliases: aliases(),
-      deps: deps()
+      deps: deps(),
+      test_coverage: [tool: ExCoveralls, minimum_coverage: 80],
+      preferred_cli_env: [coveralls: :test, "coveralls.github": :test]
     ]
   end
 
@@ -61,6 +63,7 @@ defmodule Finapp.MixProject do
       {:jason, "~> 1.4"},
       {:dns_cluster, "~> 0.1.3"},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
+      {:excoveralls, "~> 0.18", only: :test},
       {:ex_machina, "~> 2.8", only: :test},
       {:mox, "~> 1.2", only: :test}
     ]

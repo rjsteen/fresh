@@ -95,8 +95,8 @@ jobs:
       - name: Credo (strict)
         run: mix credo --strict
 
-      - name: Test
-        run: mix test
+      - name: Test with coverage
+        run: mix coveralls
 
   ci:
     name: CI passed
