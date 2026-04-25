@@ -31,7 +31,16 @@ jobs:
         run: pnpm turbo lint
 
       - name: Test
-        run: pnpm turbo test
+        run: pnpm turbo test:coverage
+
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: |
+            apps/web/coverage/lcov.info
+            packages/core/coverage/lcov.info
+          retention-days: 14
 
   backend:
     name: Backend (credo, test)
