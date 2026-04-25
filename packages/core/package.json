@@ -51,7 +51,7 @@
   },
   "dependencies": {
     "phoenix": "^1.7.14",
-    "uuid": "^11.0.3",
+    "uuid": "^14.0.0",
     "zod": "^3.24.1"
   },
   "devDependencies": {
