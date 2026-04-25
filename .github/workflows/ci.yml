@@ -95,8 +95,10 @@ jobs:
       - name: Credo (strict)
         run: mix credo --strict
 
-      - name: Test
-        run: mix test --cover
+      - name: Test with coverage
+        run: mix coveralls.github
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   ci:
     name: CI passed
