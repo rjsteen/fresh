@@ -5,4 +5,5 @@ export * from './channels/socket';
 export * from './channels/hooks';
 export * from './ml/inference';
 export * from './budget/rules';
+export * from './budget/recurring';
 export * from './sync/batch';

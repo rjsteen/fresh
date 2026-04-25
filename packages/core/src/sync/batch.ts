@@ -11,12 +11,13 @@
  * or processed in plaintext on the backend.
  */
 
-import { upsertTransaction, categorizeTransaction, hasAlertFired, recordAlertFired } from '../db/queries';
+import { upsertTransaction, categorizeTransaction, hasAlertFired, recordAlertFired, getMissedRecurringCharges } from '../db/queries';
 import type { SqliteDriver } from '../db/client';
-import type { Transaction } from '../db/schema';
+import type { Transaction, RecurringPattern } from '../db/schema';
 import type { SyncCompletePayload } from '../channels/socket';
 import type { TransactionCategorizer, AnomalyDetector } from '../ml/inference';
 import { ruleEngine } from '../budget/rules';
+import { detectRecurringPatterns } from '../budget/recurring';
 
 /**
  * Decrypt an AES-256-GCM encrypted batch of transactions.
@@ -49,6 +50,8 @@ export interface SyncBatchDeps {
   ackSync: (accountTokenRef: string) => void;
   /** Optional — called with the rule's backend_token_ref when a rule fires */
   notifyAlertFired?: (tokenRef: string) => void;
+  /** Optional — called for each recurring charge that was expected but not found */
+  onMissedCharge?: (pattern: RecurringPattern) => void;
 }
 
 /**
@@ -67,7 +70,7 @@ export async function processSyncBatch(
   deps: SyncBatchDeps
 ): Promise<void> {
   const { account_token_ref, encrypted_batch } = payload;
-  const { db, deviceKey, categorizer, anomalyDetector, ackSync, notifyAlertFired } = deps;
+  const { db, deviceKey, categorizer, anomalyDetector, ackSync, notifyAlertFired, onMissedCharge } = deps;
 
   if (!encrypted_batch) {
     ackSync(account_token_ref);
@@ -141,6 +144,19 @@ export async function processSyncBatch(
     }
   } catch (err) {
     console.warn('[processSyncBatch] balance rule evaluation failed', err);
+  }
+
+  // Detect recurring patterns and check for missed charges
+  try {
+    await detectRecurringPatterns(db);
+    if (onMissedCharge) {
+      const missed = await getMissedRecurringCharges(db);
+      for (const pattern of missed) {
+        onMissedCharge(pattern);
+      }
+    }
+  } catch (err) {
+    console.warn('[processSyncBatch] recurring pattern detection failed', err);
   }
 
   ackSync(account_token_ref);

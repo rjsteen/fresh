@@ -7,6 +7,7 @@ import {
   getAccounts,
   getTransactions,
   getSpendingByCategory,
+  getRecurringPatterns,
 } from '@fresh/core/db';
 import { useDb } from '../context/DbContext';
 
@@ -33,6 +34,12 @@ export function DashboardScreen() {
   const { data: spending = [] } = useQuery({
     queryKey: ['spending', monthStart, monthEnd],
     queryFn: () => getSpendingByCategory(db.raw, monthStart, monthEnd),
+  });
+
+  const { data: subscriptions = [] } = useQuery({
+    queryKey: ['recurring_patterns'],
+    queryFn: () => getRecurringPatterns(db.raw),
+    select: (patterns) => patterns.filter((p) => p.is_subscription),
   });
 
   const { data: trendTx = [] } = useQuery({
@@ -111,6 +118,36 @@ export function DashboardScreen() {
         </View>
       )}
 
+      {/* Subscriptions */}
+      {subscriptions.length > 0 && (
+        <View style={styles.card}>
+          <Text style={styles.sectionTitle}>Subscriptions</Text>
+          {subscriptions.map((sub) => {
+            const isOverdue =
+              sub.next_expected_at !== null && sub.next_expected_at < format(now, 'yyyy-MM-dd');
+            return (
+              <View key={sub.merchant_name} style={styles.subRow}>
+                <View style={styles.subInfo}>
+                  <Text style={styles.subName} numberOfLines={1}>
+                    {sub.merchant_name}
+                  </Text>
+                  <Text style={[styles.subNext, isOverdue && styles.subOverdue]}>
+                    {isOverdue
+                      ? `Overdue since ${sub.next_expected_at}`
+                      : sub.next_expected_at
+                        ? `Due ${sub.next_expected_at}`
+                        : `Every ${sub.frequency_days}d`}
+                  </Text>
+                </View>
+                <Text style={styles.subAmount}>
+                  {sub.typical_amount !== null ? currency(sub.typical_amount) : '—'}
+                </Text>
+              </View>
+            );
+          })}
+        </View>
+      )}
+
       {/* Recent transactions */}
       <View style={styles.card}>
         <Text style={styles.sectionTitle}>Recent Transactions</Text>
@@ -186,4 +223,17 @@ const styles = StyleSheet.create({
   txDate: { color: '#64748b', fontSize: 12, marginTop: 2 },
   txAmount: { fontSize: 14, fontWeight: '600' },
   empty: { color: '#64748b', textAlign: 'center', paddingVertical: 16 },
+  subRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#334155',
+  },
+  subInfo: { flex: 1, marginRight: 12 },
+  subName: { color: '#f1f5f9', fontSize: 14 },
+  subNext: { color: '#64748b', fontSize: 12, marginTop: 2 },
+  subOverdue: { color: '#f87171' },
+  subAmount: { color: '#94a3b8', fontSize: 14, fontWeight: '600' },
 });
