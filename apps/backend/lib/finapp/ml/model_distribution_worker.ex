@@ -9,7 +9,7 @@ defmodule Finapp.ML.ModelDistributionWorker do
 
   use Oban.Worker, queue: :model_dist, max_attempts: 3
 
-  alias Finapp.Repo
+  alias Finapp.{Accounts.Device, Notifications.PushWorker, Repo}
   import Ecto.Query
 
   @impl Oban.Worker
@@ -39,6 +39,31 @@ defmodule Finapp.ML.ModelDistributionWorker do
     # Broadcast to all connected users via PubSub
     # Each user's DeviceChannel will push the signal to their connected devices
     Phoenix.PubSub.broadcast(Finapp.PubSub, "model_updates", {:model_updated, payload})
+
+    enqueue_model_pushes(model_type, version)
+  end
+
+  defp enqueue_model_pushes(model_type, version) do
+    user_ids =
+      Repo.all(
+        from d in Device,
+          where: not is_nil(d.push_token),
+          select: d.user_id,
+          distinct: true
+      )
+
+    changesets =
+      Enum.map(user_ids, fn user_id ->
+        PushWorker.new(%{
+          "user_id" => user_id,
+          "title" => "Model updated",
+          "body" => "New #{model_type} v#{version} is available.",
+          "data" => %{"event" => "model:updated", "model_type" => model_type, "version" => version}
+        })
+      end)
+
+    Oban.insert_all(changesets)
+    :ok
   end
 
   defp get_current_model_versions do

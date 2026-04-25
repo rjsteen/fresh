@@ -3,6 +3,13 @@ import { Slot, useRouter, useSegments } from 'expo-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useAuthStore } from '../src/store/auth';
+import {
+  setupNotificationHandler,
+  useNotificationSetup,
+  useNotificationResponseListener,
+} from '../src/notifications';
+
+setupNotificationHandler();
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 30_000, retry: 1 } },
@@ -28,6 +35,9 @@ function AuthGate() {
       router.replace('/(auth)/login');
     }
   }, [hydrated, isAuthenticated, segments]);
+
+  useNotificationSetup();
+  useNotificationResponseListener(router);
 
   return <Slot />;
 }

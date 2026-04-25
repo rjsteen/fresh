@@ -16,6 +16,9 @@ defmodule Finapp.Sync.BankSyncWorker do
     max_attempts: 5,
     priority: 1
 
+  require Logger
+
+  alias Finapp.Notifications.PushWorker
   alias Finapp.Repo
   alias Finapp.Sync.{GoCardless, SimpleFin, SyncJob}
 
@@ -27,6 +30,7 @@ defmodule Finapp.Sync.BankSyncWorker do
          {:ok, result} <- adapter.fetch_transactions(sync_job),
          :ok <- broadcast_to_device(sync_job, result) do
       update_cursor(sync_job, result.next_cursor)
+      enqueue_sync_push(sync_job)
       :ok
     else
       {:error, :rate_limited} ->
@@ -86,6 +90,24 @@ defmodule Finapp.Sync.BankSyncWorker do
     case Redix.command(:redix, ["GET", "session_key:#{user_id}"]) do
       {:ok, key} when is_binary(key) -> key
       _ -> raise "No session key for user #{user_id}"
+    end
+  end
+
+  defp enqueue_sync_push(sync_job) do
+    case %{
+           "user_id" => sync_job.user_id,
+           "title" => "Sync complete",
+           "body" => "New transactions are ready.",
+           "data" => %{"event" => "sync:complete"}
+         }
+         |> PushWorker.new()
+         |> Oban.insert() do
+      {:ok, _job} ->
+        :ok
+
+      {:error, reason} ->
+        Logger.warning("Failed to enqueue sync push for user #{sync_job.user_id}: #{inspect(reason)}")
+        :ok
     end
   end
 

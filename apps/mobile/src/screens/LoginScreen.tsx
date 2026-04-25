@@ -10,7 +10,9 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import * as SecureStore from 'expo-secure-store';
 import { useAuthStore } from '../store/auth';
+import { DEVICE_ID_KEY } from '../constants';
 
 const API = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:4000';
 
@@ -41,14 +43,21 @@ export function LoginScreen() {
       const { token } = await resp.json();
       await setToken(token);
 
-      fetch(`${API}/api/v1/devices`, {
+      await fetch(`${API}/api/v1/devices`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({ name: 'Mobile App', platform: Platform.OS }),
-      }).catch(() => {});
+      })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((body) => {
+          if (body?.device_id) {
+            return SecureStore.setItemAsync(DEVICE_ID_KEY, String(body.device_id));
+          }
+        })
+        .catch(() => {});
 
       router.replace('/(app)/dashboard');
     } catch (err) {
