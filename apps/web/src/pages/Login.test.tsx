@@ -75,14 +75,12 @@ afterEach(() => {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function fillAndSubmit(email = 'user@example.com', password = 'secret123') {
-  return async () => {
-    const user = userEvent.setup();
-    renderWithProviders(<Login />);
-    await user.type(screen.getByRole('textbox', { name: /email/i }), email);
-    await user.type(screen.getByLabelText(/password/i), password);
-    await user.click(screen.getByRole('button', { name: /sign in/i }));
-  };
+async function fillAndSubmit(email = 'user@example.com', password = 'secret123') {
+  const user = userEvent.setup();
+  renderWithProviders(<Login />);
+  await user.type(screen.getByRole('textbox', { name: /email/i }), email);
+  await user.type(screen.getByLabelText(/password/i), password);
+  await user.click(screen.getByRole('button', { name: /sign in/i }));
 }
 
 // ---------------------------------------------------------------------------
@@ -141,7 +139,7 @@ describe('Login', () => {
   describe('error handling', () => {
     it('shows error banner when login returns 401', async () => {
       fetchSpy.mockImplementation(makeLoginStub({ loginOk: false, loginError: 'Invalid credentials' }));
-      await fillAndSubmit()();
+      await fillAndSubmit();
       await waitFor(() => {
         expect(screen.getByText(/invalid credentials/i)).toBeInTheDocument();
       });
@@ -151,7 +149,7 @@ describe('Login', () => {
       vi.stubGlobal('fetch', vi.fn(async () =>
         new Response(JSON.stringify({}), { status: 500, headers: { 'Content-Type': 'application/json' } })
       ));
-      await fillAndSubmit()();
+      await fillAndSubmit();
       await waitFor(() => {
         expect(screen.getByText(/login failed/i)).toBeInTheDocument();
       });
@@ -160,12 +158,12 @@ describe('Login', () => {
 
   describe('successful login flow', () => {
     it('calls storeToken with the returned JWT', async () => {
-      await fillAndSubmit()();
+      await fillAndSubmit();
       await waitFor(() => expect(mockStoreToken).toHaveBeenCalledWith('test-jwt-token', 'user@example.com'));
     });
 
     it('registers the device after a successful login', async () => {
-      await fillAndSubmit()();
+      await fillAndSubmit();
       await waitFor(() => {
         const deviceCall = fetchSpy.mock.calls.find(([url]) => String(url).includes('/api/v1/devices'));
         expect(deviceCall).toBeDefined();
@@ -177,7 +175,7 @@ describe('Login', () => {
     });
 
     it('navigates to /dashboard after login and device registration', async () => {
-      await fillAndSubmit()();
+      await fillAndSubmit();
       await waitFor(() =>
         expect(mockNavigate).toHaveBeenCalledWith('/dashboard', { replace: true })
       );

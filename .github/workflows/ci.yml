@@ -31,9 +31,6 @@ jobs:
         run: pnpm turbo lint
 
       - name: Test
-        run: pnpm turbo test
-
-      - name: Coverage
         run: pnpm turbo test:coverage
 
       - name: Upload coverage

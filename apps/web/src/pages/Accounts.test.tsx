@@ -6,7 +6,7 @@
  */
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { vi, describe, it, expect, beforeAll, afterAll, beforeEach, type Mock } from 'vitest';
+import { vi, describe, it, expect, beforeEach, afterEach, type Mock } from 'vitest';
 import { Accounts } from './Accounts';
 import { renderWithProviders } from '../test/renderWithProviders';
 import { makeTestDb } from '../test/makeTestDb';
@@ -40,7 +40,7 @@ import { useDb } from '../App';
 // Global fetch stub — returns empty sync jobs list by default
 // ---------------------------------------------------------------------------
 
-beforeAll(() => {
+beforeEach(() => {
   vi.stubGlobal('fetch', async (url: string | URL | Request) => {
     const urlStr = String(url);
     if (urlStr.includes('/api/v1/sync/jobs')) {
@@ -53,7 +53,7 @@ beforeAll(() => {
   });
 });
 
-afterAll(() => vi.unstubAllGlobals());
+afterEach(() => vi.unstubAllGlobals());
 
 // ---------------------------------------------------------------------------
 // Per-test DB setup
@@ -236,14 +236,6 @@ describe('Accounts', () => {
         // Both top-level and panel-inline error banners show the same message
         expect(screen.getAllByText(/invalid setup token/i).length).toBeGreaterThan(0);
       });
-
-      vi.unstubAllGlobals();
-      vi.stubGlobal('fetch', async (url: string | URL | Request) => {
-        if (String(url).includes('/sync/jobs')) {
-          return new Response(JSON.stringify({ jobs: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
-        }
-        return new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } });
-      });
     });
 
     it('shows a success banner when the API call succeeds', async () => {
@@ -265,14 +257,6 @@ describe('Accounts', () => {
 
       await waitFor(() => {
         expect(screen.getByText(/simplefin account connected/i)).toBeInTheDocument();
-      });
-
-      vi.unstubAllGlobals();
-      vi.stubGlobal('fetch', async (url: string | URL | Request) => {
-        if (String(url).includes('/sync/jobs')) {
-          return new Response(JSON.stringify({ jobs: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
-        }
-        return new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } });
       });
     });
   });
