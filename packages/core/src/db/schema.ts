@@ -458,6 +458,20 @@ export const MIGRATIONS: Record<number, string> = {
   `,
 };
 
+export interface RecurringPattern {
+  id: string;
+  merchant_name: string;
+  category_id: string | null;
+  typical_amount: number | null;
+  amount_variance: number | null;
+  frequency_days: number;
+  last_seen_at: string | null;
+  next_expected_at: string | null;
+  is_subscription: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 export type AccountType = 'checking' | 'savings' | 'credit' | 'investment' | 'cash';
 export type ConnectionType = 'simplefin' | 'gocardless' | 'manual';
 export type CategorySource = 'ml' | 'rule' | 'user';

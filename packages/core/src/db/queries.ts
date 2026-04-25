@@ -5,7 +5,7 @@
 
 import { v4 as uuidv4 } from 'uuid';
 import type { SqliteDriver } from './client';
-import type { Account, Transaction, AlertRule } from './schema';
+import type { Account, Transaction, AlertRule, RecurringPattern } from './schema';
 
 // ---------------------------------------------------------------------------
 // Accounts
@@ -336,6 +336,102 @@ export async function recordAlertFired(
     'INSERT INTO fired_alerts (id, rule_id, transaction_id) VALUES (?, ?, ?)',
     [uuidv4(), ruleId, transactionId ?? null]
   );
+}
+
+// ---------------------------------------------------------------------------
+// Recurring patterns
+// ---------------------------------------------------------------------------
+
+export async function getRecurringPatterns(db: SqliteDriver): Promise<RecurringPattern[]> {
+  type Row = Omit<RecurringPattern, 'is_subscription'> & { is_subscription: 0 | 1 };
+  const rows = await db.query<Row>(
+    `SELECT * FROM recurring_patterns ORDER BY next_expected_at ASC NULLS LAST`
+  );
+  return rows.map((r) => ({ ...r, is_subscription: r.is_subscription === 1 }));
+}
+
+export async function upsertRecurringPattern(
+  db: SqliteDriver,
+  pattern: Omit<RecurringPattern, 'id' | 'created_at' | 'updated_at'>
+): Promise<void> {
+  const existing = await db.query<{ id: string }>(
+    'SELECT id FROM recurring_patterns WHERE merchant_name = ?',
+    [pattern.merchant_name]
+  );
+
+  if (existing.length > 0) {
+    await db.execute(
+      `UPDATE recurring_patterns
+       SET category_id = ?, typical_amount = ?, amount_variance = ?,
+           frequency_days = ?, last_seen_at = ?, next_expected_at = ?,
+           is_subscription = ?, updated_at = datetime('now')
+       WHERE id = ?`,
+      [
+        pattern.category_id ?? null,
+        pattern.typical_amount ?? null,
+        pattern.amount_variance ?? null,
+        pattern.frequency_days,
+        pattern.last_seen_at ?? null,
+        pattern.next_expected_at ?? null,
+        pattern.is_subscription ? 1 : 0,
+        existing[0].id,
+      ]
+    );
+  } else {
+    await db.execute(
+      `INSERT INTO recurring_patterns
+         (id, merchant_name, category_id, typical_amount, amount_variance,
+          frequency_days, last_seen_at, next_expected_at, is_subscription)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        uuidv4(),
+        pattern.merchant_name,
+        pattern.category_id ?? null,
+        pattern.typical_amount ?? null,
+        pattern.amount_variance ?? null,
+        pattern.frequency_days,
+        pattern.last_seen_at ?? null,
+        pattern.next_expected_at ?? null,
+        pattern.is_subscription ? 1 : 0,
+      ]
+    );
+  }
+}
+
+/**
+ * Returns patterns whose next_expected_at has passed with no matching
+ * transaction in a ±(frequency_days/2, min 3) day window around it.
+ */
+export async function getMissedRecurringCharges(
+  db: SqliteDriver,
+  asOfDate: string = new Date().toISOString().slice(0, 10)
+): Promise<RecurringPattern[]> {
+  type Row = Omit<RecurringPattern, 'is_subscription'> & { is_subscription: 0 | 1 };
+  const overdue = await db.query<Row>(
+    `SELECT * FROM recurring_patterns
+     WHERE next_expected_at IS NOT NULL AND next_expected_at < ?`,
+    [asOfDate]
+  );
+
+  const missed: RecurringPattern[] = [];
+  for (const row of overdue) {
+    const halfWindow = Math.max(3, Math.floor(row.frequency_days / 2));
+    const windowStart = _isoAddDays(row.next_expected_at!, -halfWindow);
+    const windowEnd = _isoAddDays(row.next_expected_at!, halfWindow);
+    const [{ n }] = await db.query<{ n: number }>(
+      `SELECT COUNT(*) as n FROM transactions
+       WHERE merchant_name = ? AND pending = 0 AND date BETWEEN ? AND ?`,
+      [row.merchant_name, windowStart, windowEnd]
+    );
+    if (n === 0) missed.push({ ...row, is_subscription: row.is_subscription === 1 });
+  }
+  return missed;
+}
+
+function _isoAddDays(date: string, days: number): string {
+  const d = new Date(date + 'T00:00:00Z');
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
 }
 
 // ---------------------------------------------------------------------------
