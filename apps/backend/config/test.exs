@@ -27,6 +27,7 @@ config :finapp, Finapp.Vault,
   ]
 
 config :finapp, Finapp.Sync.SimpleFin, req_plug: {Req.Test, Finapp.Sync.SimpleFin}
+config :finapp, Finapp.Sync.GoCardless, req_plug: {Req.Test, Finapp.Sync.GoCardless}
 
 config :finapp, :sidecar_token, "test-sidecar-token"
 config :finapp, :cdn_base_url, "https://cdn.test.example.com"

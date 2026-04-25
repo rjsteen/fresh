@@ -91,7 +91,7 @@ defmodule Finapp.Sync.BankSyncWorker do
 
   defp update_cursor(sync_job, next_cursor) do
     sync_job
-    |> Ecto.Changeset.change(last_cursor: next_cursor, last_synced_at: DateTime.utc_now())
+    |> Ecto.Changeset.change(last_cursor: next_cursor, last_synced_at: DateTime.utc_now() |> DateTime.truncate(:second))
     |> Repo.update!()
   end
 
