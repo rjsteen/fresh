@@ -5,7 +5,7 @@
  * The backend never receives, stores, or processes any of these values.
  */
 
-export const SCHEMA_VERSION = 6;
+export const SCHEMA_VERSION = 7;
 
 export const CREATE_TABLES_SQL = `
 -- Schema version tracking
@@ -442,6 +442,20 @@ export const MIGRATIONS: Record<number, string> = {
       VALUES ('sync_state', OLD.account_id, 'delete', NULL);
     END;
   `,
+
+  7: `
+    -- Deduplication log for fired alert rules.
+    -- For transaction-scoped rules, transaction_id is set; look up by (rule_id, transaction_id).
+    -- For balance/budget rules, transaction_id is NULL; use a time-based cooldown instead.
+    CREATE TABLE IF NOT EXISTS fired_alerts (
+      id             TEXT PRIMARY KEY,
+      rule_id        TEXT NOT NULL REFERENCES alert_rules(id) ON DELETE CASCADE,
+      transaction_id TEXT REFERENCES transactions(id) ON DELETE CASCADE,
+      fired_at       TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_fired_alerts_lookup
+      ON fired_alerts(rule_id, transaction_id);
+  `,
 };
 
 export type AccountType = 'checking' | 'savings' | 'credit' | 'investment' | 'cash';
@@ -518,6 +532,13 @@ export interface BudgetLine {
   rollover: boolean;
   created_at: string;
   updated_at: string;
+}
+
+export interface FiredAlert {
+  id: string;
+  rule_id: string;
+  transaction_id: string | null;
+  fired_at: string;
 }
 
 export interface AlertRule {

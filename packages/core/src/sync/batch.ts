@@ -11,11 +11,12 @@
  * or processed in plaintext on the backend.
  */
 
-import { upsertTransaction, categorizeTransaction } from '../db/queries';
+import { upsertTransaction, categorizeTransaction, hasAlertFired, recordAlertFired } from '../db/queries';
 import type { SqliteDriver } from '../db/client';
 import type { Transaction } from '../db/schema';
 import type { SyncCompletePayload } from '../channels/socket';
 import type { TransactionCategorizer, AnomalyDetector } from '../ml/inference';
+import { ruleEngine } from '../budget/rules';
 
 /**
  * Decrypt an AES-256-GCM encrypted batch of transactions.
@@ -46,6 +47,8 @@ export interface SyncBatchDeps {
   /** Optional — skipped if not loaded */
   anomalyDetector?: AnomalyDetector;
   ackSync: (accountTokenRef: string) => void;
+  /** Optional — called with the rule's backend_token_ref when a rule fires */
+  notifyAlertFired?: (tokenRef: string) => void;
 }
 
 /**
@@ -64,7 +67,7 @@ export async function processSyncBatch(
   deps: SyncBatchDeps
 ): Promise<void> {
   const { account_token_ref, encrypted_batch } = payload;
-  const { db, deviceKey, categorizer, anomalyDetector, ackSync } = deps;
+  const { db, deviceKey, categorizer, anomalyDetector, ackSync, notifyAlertFired } = deps;
 
   if (!encrypted_batch) {
     ackSync(account_token_ref);
@@ -109,6 +112,35 @@ export async function processSyncBatch(
         console.warn('[processSyncBatch] anomaly detector failed for tx', saved.id, err);
       }
     }
+
+    // Evaluate transaction-scoped alert rules (large_transaction, merchant only)
+    try {
+      const fired = await ruleEngine.evaluateForTransaction(db, saved);
+      for (const event of fired) {
+        const txId = event.transaction?.id ?? null;
+        if (await hasAlertFired(db, event.rule.id, txId)) continue;
+        await recordAlertFired(db, event.rule.id, txId);
+        if (event.rule.backend_token_ref && notifyAlertFired) {
+          notifyAlertFired(event.rule.backend_token_ref);
+        }
+      }
+    } catch (err) {
+      console.warn('[processSyncBatch] rule engine failed for tx', saved.id, err);
+    }
+  }
+
+  // Evaluate balance/budget rules once after the full batch is settled
+  try {
+    const fired = await ruleEngine.evaluateBalanceRules(db);
+    for (const event of fired) {
+      if (await hasAlertFired(db, event.rule.id, null)) continue;
+      await recordAlertFired(db, event.rule.id, null);
+      if (event.rule.backend_token_ref && notifyAlertFired) {
+        notifyAlertFired(event.rule.backend_token_ref);
+      }
+    }
+  } catch (err) {
+    console.warn('[processSyncBatch] balance rule evaluation failed', err);
   }
 
   ackSync(account_token_ref);

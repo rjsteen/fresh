@@ -297,6 +297,48 @@ export async function upsertAlertRule(
 }
 
 // ---------------------------------------------------------------------------
+// Alert deduplication
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns true if this rule has already been recorded as fired for the given
+ * transaction (or, for rules without a transaction context, within the last hour).
+ */
+export async function hasAlertFired(
+  db: SqliteDriver,
+  ruleId: string,
+  transactionId: string | null
+): Promise<boolean> {
+  if (transactionId !== null) {
+    const rows = await db.query<{ n: number }>(
+      'SELECT COUNT(*) as n FROM fired_alerts WHERE rule_id = ? AND transaction_id = ?',
+      [ruleId, transactionId]
+    );
+    return rows[0].n > 0;
+  }
+  // For balance/budget rules (no tx context), apply a 1-hour cooldown window
+  const rows = await db.query<{ n: number }>(
+    `SELECT COUNT(*) as n FROM fired_alerts
+     WHERE rule_id = ? AND transaction_id IS NULL
+       AND fired_at > datetime('now', '-1 hour')`,
+    [ruleId]
+  );
+  return rows[0].n > 0;
+}
+
+/** Record that a rule fired so it won't re-fire for the same context. */
+export async function recordAlertFired(
+  db: SqliteDriver,
+  ruleId: string,
+  transactionId: string | null
+): Promise<void> {
+  await db.execute(
+    'INSERT INTO fired_alerts (id, rule_id, transaction_id) VALUES (?, ?, ?)',
+    [uuidv4(), ruleId, transactionId ?? null]
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Spending analytics (no backend involved)
 // ---------------------------------------------------------------------------
 
