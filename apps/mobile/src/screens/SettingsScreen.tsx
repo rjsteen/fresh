@@ -8,6 +8,7 @@ import {
   Alert,
   Switch,
   ActivityIndicator,
+  Platform,
 } from 'react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
@@ -15,8 +16,16 @@ import { getAllAlertRules, upsertAlertRule, deleteAlertRule } from '@fresh/core/
 import type { AlertRule } from '@fresh/core/db';
 import { useDb } from '../context/DbContext';
 import { useAuthStore } from '../store/auth';
+import { useCloudStore } from '../store/cloud';
+import type { CloudConfig } from '../store/cloud';
 
 const API = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:4000';
+
+const PROVIDER_LABELS: Record<string, string> = {
+  icloud: 'iCloud',
+  dropbox: 'Dropbox',
+  gdrive: 'Google Drive',
+};
 
 const RULE_TYPE_LABELS: Record<string, string> = {
   budget_threshold: 'Budget threshold',
@@ -55,6 +64,7 @@ export function SettingsScreen() {
   const db = useDb();
   const router = useRouter();
   const { token, clearToken } = useAuthStore();
+  const { config: cloudConfig, clearProvider } = useCloudStore();
   const qc = useQueryClient();
   const [profileError, setProfileError] = useState(false);
 
@@ -99,6 +109,31 @@ export function SettingsScreen() {
         { text: 'Cancel', style: 'cancel' },
         { text: 'Delete', style: 'destructive', onPress: () => deleteRuleMutation.mutate(rule.id) },
       ]
+    );
+  }
+
+  function handleConnectCloud(_config: CloudConfig) {
+    // TODO: Launch OAuth flow for Dropbox/GDrive when adapters are implemented
+    // (#47 DropboxAdapter, #49 ICloudAdapter). For now, store the selection so
+    // the UI reflects the intended provider — actual sync begins once adapters ship.
+    Alert.alert(
+      'Coming soon',
+      `${PROVIDER_LABELS[_config.provider] ?? _config.provider} backup is not yet available. It will be enabled in a future update.`,
+    );
+  }
+
+  function handleDisconnectCloud() {
+    Alert.alert(
+      'Disconnect cloud backup',
+      'Your local data will not be affected. Future changes will no longer be backed up.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Disconnect',
+          style: 'destructive',
+          onPress: () => clearProvider(),
+        },
+      ],
     );
   }
 
@@ -186,6 +221,56 @@ export function SettingsScreen() {
         </Text>
       </View>
 
+      {/* Cloud backup */}
+      <View style={styles.card}>
+        <Text style={styles.sectionTitle}>Cloud backup</Text>
+        {cloudConfig ? (
+          <>
+            <View style={styles.cloudStatusRow}>
+              <Text style={styles.cloudStatusLabel}>Connected to</Text>
+              <Text style={styles.cloudProviderName}>
+                {PROVIDER_LABELS[cloudConfig.provider] ?? cloudConfig.provider}
+              </Text>
+            </View>
+            <Text style={styles.mutedText}>
+              Your encrypted database is backed up automatically. Only you can decrypt it.
+            </Text>
+            <TouchableOpacity style={styles.cloudDisconnectBtn} onPress={handleDisconnectCloud}>
+              <Text style={styles.cloudDisconnectText}>Disconnect</Text>
+            </TouchableOpacity>
+          </>
+        ) : (
+          <>
+            <Text style={styles.mutedText}>
+              Back up your encrypted database to your personal cloud storage. Only you can
+              decrypt it — no plaintext data ever leaves this device.
+            </Text>
+            <View style={styles.cloudProviderList}>
+              {Platform.OS === 'ios' && (
+                <TouchableOpacity
+                  style={styles.cloudProviderBtn}
+                  onPress={() => handleConnectCloud({ provider: 'icloud' })}
+                >
+                  <Text style={styles.cloudProviderBtnText}>Connect iCloud</Text>
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity
+                style={styles.cloudProviderBtn}
+                onPress={() => handleConnectCloud({ provider: 'dropbox' })}
+              >
+                <Text style={styles.cloudProviderBtnText}>Connect Dropbox</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.cloudProviderBtn}
+                onPress={() => handleConnectCloud({ provider: 'gdrive' })}
+              >
+                <Text style={styles.cloudProviderBtnText}>Connect Google Drive</Text>
+              </TouchableOpacity>
+            </View>
+          </>
+        )}
+      </View>
+
       {/* Sign out */}
       <TouchableOpacity style={styles.signOutBtn} onPress={handleSignOut}>
         <Text style={styles.signOutText}>Sign out</Text>
@@ -234,6 +319,30 @@ const styles = StyleSheet.create({
   ruleActions: { alignItems: 'center', gap: 8 },
   deleteBtn: { paddingHorizontal: 4, paddingVertical: 2 },
   deleteBtnText: { color: '#f87171', fontSize: 12 },
+  cloudStatusRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
+  cloudStatusLabel: { color: '#64748b', fontSize: 13 },
+  cloudProviderName: { color: '#a5b4fc', fontSize: 13, fontWeight: '600' },
+  cloudProviderList: { gap: 8, marginTop: 12 },
+  cloudProviderBtn: {
+    backgroundColor: '#0f172a',
+    borderWidth: 1,
+    borderColor: '#334155',
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    alignItems: 'center',
+  },
+  cloudProviderBtnText: { color: '#a5b4fc', fontSize: 14, fontWeight: '500' },
+  cloudDisconnectBtn: {
+    marginTop: 12,
+    borderWidth: 1,
+    borderColor: '#f8717133',
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    alignSelf: 'flex-start',
+  },
+  cloudDisconnectText: { color: '#f87171', fontSize: 13 },
   signOutBtn: {
     backgroundColor: '#7f1d1d',
     borderWidth: 1,
