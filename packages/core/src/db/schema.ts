@@ -5,7 +5,7 @@
  * The backend never receives, stores, or processes any of these values.
  */
 
-export const SCHEMA_VERSION = 7;
+export const SCHEMA_VERSION = 8;
 
 export const CREATE_TABLES_SQL = `
 -- Schema version tracking
@@ -456,6 +456,11 @@ export const MIGRATIONS: Record<number, string> = {
     CREATE INDEX IF NOT EXISTS idx_fired_alerts_lookup
       ON fired_alerts(rule_id, transaction_id);
   `,
+  8: `
+    ALTER TABLE accounts ADD COLUMN external_id TEXT;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_external_id
+      ON accounts(external_id) WHERE external_id IS NOT NULL;
+  `,
 };
 
 export interface RecurringPattern {
@@ -490,6 +495,7 @@ export interface Account {
   last_synced_at: string | null;
   connection_type: ConnectionType;
   sync_token_ref: string | null;
+  external_id?: string | null;
   is_active: boolean;
   display_order?: number;
   created_at: string;

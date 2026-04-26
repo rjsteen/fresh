@@ -16,4 +16,4 @@ RUN mix deps.compile
 
 EXPOSE 4000
 
-CMD ["mix", "phx.server"]
+CMD ["sh", "-c", "mix compile && mix phx.server"]

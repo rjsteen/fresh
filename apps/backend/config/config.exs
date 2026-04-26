@@ -25,6 +25,8 @@ config :finapp, Oban,
     {Oban.Plugins.Pruner, max_age: 60 * 60 * 24 * 7},   # 7 days
     {Oban.Plugins.Cron,
      crontab: [
+       # Enqueue any sync jobs that have never completed — every 5 minutes
+       {"*/5 * * * *", Finapp.Sync.SyncSchedulerWorker},
        # Model distribution check — every 6 hours
        {"0 */6 * * *", Finapp.ML.ModelDistributionWorker},
        # Stale device cleanup — daily at 3 AM
@@ -55,7 +57,7 @@ config :finapp, Finapp.Vault,
 
 config :logger, :console,
   format: "$time $metadata[$level] $message\n",
-  metadata: [:request_id, :user_id, :device_id]
+  metadata: [:request_id, :user_id, :device_id, :sync_job_id, :connection_type, :attempt, :transaction_count, :reason]
 
 config :elixir, :time_zone_database, Tzdata.TimeZoneDatabase
 

@@ -53,8 +53,10 @@ defmodule FinappWeb.ConnectionControllerTest do
       assert job.user_id == user.id
       assert job.connection_type == "simplefin"
       assert job.account_token_ref == "token-ref-xyz"
-      # Access URL must not be stored in plaintext
+      # Access URL must be encrypted, and must decrypt back to the original
       refute job.encrypted_access_url_ref == @access_url
+      {:ok, decrypted} = Finapp.Vault.decrypt(job.encrypted_access_url_ref)
+      assert decrypted == @access_url
       assert_enqueued(worker: BankSyncWorker, args: %{"sync_job_id" => job.id})
     end
 

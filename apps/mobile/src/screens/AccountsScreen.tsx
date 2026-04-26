@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
+import * as Crypto from 'expo-crypto';
 import { getAccounts } from '@fresh/core/db';
 import type { Account } from '@fresh/core/db';
 import { useDb } from '../context/DbContext';
@@ -139,10 +140,11 @@ export function AccountsScreen() {
 
   const simplefinMutation = useMutation({
     mutationFn: async (tok: string) => {
+      const account_token_ref = Crypto.randomUUID();
       const res = await apiFetch(`${API}/api/v1/connections/simplefin/claim`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ setup_token: tok }),
+        body: JSON.stringify({ setup_token: tok, account_token_ref }),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));

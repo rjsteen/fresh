@@ -466,10 +466,11 @@ export function Accounts() {
 
   const simplefinMutation = useMutation({
     mutationFn: async (token: string) => {
+      const account_token_ref = crypto.randomUUID();
       const res = await apiFetch(`${API}/api/v1/connections/simplefin/claim`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ setup_token: token }),
+        body: JSON.stringify({ setup_token: token, account_token_ref }),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));

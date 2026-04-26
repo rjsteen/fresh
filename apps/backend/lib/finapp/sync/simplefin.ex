@@ -12,7 +12,7 @@ defmodule Finapp.Sync.SimpleFin do
   in plaintext in Postgres.
   """
 
-  alias Finapp.Sync.{SyncJob, Transaction}
+  alias Finapp.Sync.{Account, SyncJob, Transaction}
   alias Finapp.Vault
 
   @doc """
@@ -24,14 +24,14 @@ defmodule Finapp.Sync.SimpleFin do
   def claim_access_url(setup_token) do
     with {:ok, claim_url} <- decode_setup_token(setup_token),
          {:ok, resp} <- do_req_post(claim_url, body: "") do
-      Vault.encrypt(resp.body)
+      Vault.encrypt(String.trim(resp.body))
     end
   end
 
   @doc "Fetch transactions for a sync job. Returns parsed transactions and next cursor."
   def fetch_transactions(%SyncJob{} = job) do
     with {:ok, access_url} <- Vault.decrypt(job.encrypted_access_url_ref),
-         {:ok, resp} <- do_req_get(access_url, params: cursor_params(job.last_cursor), receive_timeout: 30_000) do
+         {:ok, resp} <- do_req_get(access_url <> "/accounts", params: cursor_params(job.last_cursor), receive_timeout: 30_000) do
       parse_response(resp)
     end
   end
@@ -42,21 +42,38 @@ defmodule Finapp.Sync.SimpleFin do
   defp cursor_params(cursor), do: [start_date: cursor]
 
   defp do_req_get(url, opts) do
-    opts = base_opts(opts)
+    {clean_url, opts} = extract_auth(url, base_opts(opts))
     case req_plug() do
-      nil -> Req.get(url, opts)
-      plug -> Req.get(url, Keyword.put(opts, :plug, plug))
+      nil -> Req.get(clean_url, opts)
+      plug -> Req.get(clean_url, Keyword.put(opts, :plug, plug))
     end
     |> handle_http_response()
   end
 
   defp do_req_post(url, opts) do
-    opts = base_opts(opts)
+    {clean_url, opts} = extract_auth(url, base_opts(opts))
     case req_plug() do
-      nil -> Req.post(url, opts)
-      plug -> Req.post(url, Keyword.put(opts, :plug, plug))
+      nil -> Req.post(clean_url, opts)
+      plug -> Req.post(clean_url, Keyword.put(opts, :plug, plug))
     end
     |> handle_http_response()
+  end
+
+  # Req doesn't auto-extract credentials from user:pass@host URLs.
+  # Parse them out and pass via the :auth option instead.
+  defp extract_auth(url, opts) do
+    uri = URI.parse(url)
+
+    case uri.userinfo do
+      nil ->
+        {url, opts}
+
+      userinfo ->
+        [user | rest] = String.split(userinfo, ":", parts: 2)
+        pass = List.first(rest, "")
+        clean_url = URI.to_string(%{uri | userinfo: nil})
+        {clean_url, Keyword.put(opts, :auth, {:basic, "#{user}:#{pass}"})}
+    end
   end
 
   # Disable Req's built-in retry so callers control retry behaviour (e.g. Oban snooze).
@@ -69,10 +86,12 @@ defmodule Finapp.Sync.SimpleFin do
   defp handle_http_response({:error, reason}), do: {:error, reason}
 
   defp parse_response(%{body: body}) when is_map(body) do
-    accounts = body["accounts"] || []
+    raw_accounts = body["accounts"] || []
+
+    accounts = Enum.map(raw_accounts, &normalize_account/1)
 
     transactions =
-      Enum.flat_map(accounts, fn account ->
+      Enum.flat_map(raw_accounts, fn account ->
         (account["transactions"] || [])
         |> Enum.map(&normalize_transaction(&1, account))
       end)
@@ -83,7 +102,7 @@ defmodule Finapp.Sync.SimpleFin do
       |> Enum.reject(&is_nil/1)
       |> Enum.max(fn -> nil end)
 
-    {:ok, %{transactions: transactions, next_cursor: next_cursor}}
+    {:ok, %{accounts: accounts, transactions: transactions, next_cursor: next_cursor}}
   end
 
   defp parse_response(%{body: body}) when is_binary(body) do
@@ -106,6 +125,29 @@ defmodule Finapp.Sync.SimpleFin do
       currency: account["currency"] || "USD"
     }
   end
+
+  defp normalize_account(account) do
+    %Account{
+      external_id: account["id"],
+      name: account["name"] || "Unknown Account",
+      institution: get_in(account, ["org", "name"]) || "Unknown",
+      currency: account["currency"] || "USD",
+      balance: parse_amount(account["balance"]),
+      available_balance: parse_amount(account["available-balance"]),
+      type: infer_account_type(account)
+    }
+  end
+
+  defp infer_account_type(%{"name" => name}) when is_binary(name) do
+    name_lower = String.downcase(name)
+    cond do
+      String.contains?(name_lower, ["credit", "visa", "mastercard", "amex", "card"]) -> "credit"
+      String.contains?(name_lower, ["saving"]) -> "savings"
+      String.contains?(name_lower, ["invest", "brokerage", "401k", "ira"]) -> "investment"
+      true -> "checking"
+    end
+  end
+  defp infer_account_type(_), do: "checking"
 
   defp parse_amount(nil), do: 0.0
   defp parse_amount(amount) when is_float(amount), do: amount

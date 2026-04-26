@@ -11,9 +11,19 @@
  * or processed in plaintext on the backend.
  */
 
-import { upsertTransaction, categorizeTransaction, hasAlertFired, recordAlertFired, getMissedRecurringCharges } from '../db/queries';
+import { upsertTransaction, upsertAccount, categorizeTransaction, hasAlertFired, recordAlertFired, getMissedRecurringCharges } from '../db/queries';
 import type { SqliteDriver } from '../db/client';
 import type { Transaction, RecurringPattern } from '../db/schema';
+
+export interface SyncedAccount {
+  external_id: string;
+  name: string;
+  institution: string;
+  currency: string;
+  balance: number;
+  available_balance: number | null;
+  type: string;
+}
 import type { SyncCompletePayload } from '../channels/socket';
 import type { TransactionCategorizer, AnomalyDetector } from '../ml/inference';
 import { ruleEngine } from '../budget/rules';
@@ -69,8 +79,41 @@ export async function processSyncBatch(
   payload: SyncCompletePayload,
   deps: SyncBatchDeps
 ): Promise<void> {
-  const { account_token_ref, encrypted_batch } = payload;
+  const { account_token_ref, encrypted_batch, encrypted_accounts } = payload;
   const { db, deviceKey, categorizer, anomalyDetector, ackSync, notifyAlertFired, onMissedCharge } = deps;
+
+  if (!encrypted_batch && !encrypted_accounts) {
+    ackSync(account_token_ref);
+    return;
+  }
+
+  // Upsert accounts first so transactions can reference them by account_id
+  if (encrypted_accounts) {
+    const accountBytes = Uint8Array.from(atob(encrypted_accounts), c => c.charCodeAt(0));
+    const accountIv = accountBytes.slice(0, 12);
+    const accountCiphertext = accountBytes.slice(12);
+    const accountPlaintext = await crypto.subtle.decrypt(
+      { name: 'AES-GCM', iv: accountIv },
+      deviceKey,
+      accountCiphertext
+    );
+    const accounts = JSON.parse(new TextDecoder().decode(accountPlaintext)) as SyncedAccount[];
+    for (const account of accounts) {
+      await upsertAccount(db, {
+        name: account.name,
+        institution: account.institution,
+        type: account.type as 'checking' | 'savings' | 'credit' | 'investment' | 'cash',
+        currency: account.currency,
+        current_balance: account.balance,
+        available_balance: account.available_balance,
+        last_synced_at: new Date().toISOString(),
+        connection_type: 'simplefin',
+        sync_token_ref: account_token_ref,
+        external_id: account.external_id,
+        is_active: true,
+      });
+    }
+  }
 
   if (!encrypted_batch) {
     ackSync(account_token_ref);
