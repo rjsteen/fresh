@@ -14,7 +14,8 @@ defmodule Finapp.Sync.BankSyncWorker do
   use Oban.Worker,
     queue: :bank_sync,
     max_attempts: 5,
-    priority: 1
+    priority: 1,
+    unique: [keys: [:sync_job_id], period: 300]
 
   require Logger
 
@@ -23,25 +24,51 @@ defmodule Finapp.Sync.BankSyncWorker do
   alias Finapp.Sync.{GoCardless, SimpleFin, SyncJob}
 
   @impl Oban.Worker
-  def perform(%Oban.Job{args: %{"sync_job_id" => sync_job_id}}) do
+  def perform(%Oban.Job{args: %{"sync_job_id" => sync_job_id}, attempt: attempt}) do
     sync_job = Repo.get!(SyncJob, sync_job_id) |> Repo.preload(:user)
+
+    Logger.info("[BankSync] starting sync",
+      sync_job_id: sync_job_id,
+      connection_type: sync_job.connection_type,
+      user_id: sync_job.user_id,
+      attempt: attempt
+    )
 
     with {:ok, adapter} <- get_adapter(sync_job),
          {:ok, result} <- adapter.fetch_transactions(sync_job),
          :ok <- broadcast_to_device(sync_job, result) do
       update_cursor(sync_job, result.next_cursor)
       enqueue_sync_push(sync_job)
+
+      Logger.info("[BankSync] sync complete",
+        sync_job_id: sync_job_id,
+        user_id: sync_job.user_id,
+        transaction_count: length(result.transactions)
+      )
+
       :ok
     else
       {:error, :rate_limited} ->
-        # Snooze for 1 minute — Oban will re-enqueue
+        Logger.warning("[BankSync] rate limited, snoozing 60s",
+          sync_job_id: sync_job_id,
+          user_id: sync_job.user_id
+        )
         {:snooze, 60}
 
       {:error, :connection_expired} ->
+        Logger.warning("[BankSync] connection expired",
+          sync_job_id: sync_job_id,
+          user_id: sync_job.user_id
+        )
         mark_connection_expired(sync_job)
         :ok
 
       {:error, reason} ->
+        Logger.error("[BankSync] sync failed",
+          sync_job_id: sync_job_id,
+          user_id: sync_job.user_id,
+          reason: inspect(reason)
+        )
         {:error, reason}
     end
   end

@@ -24,14 +24,14 @@ defmodule Finapp.Sync.SimpleFin do
   def claim_access_url(setup_token) do
     with {:ok, claim_url} <- decode_setup_token(setup_token),
          {:ok, resp} <- do_req_post(claim_url, body: "") do
-      Vault.encrypt(resp.body)
+      Vault.encrypt(String.trim(resp.body))
     end
   end
 
   @doc "Fetch transactions for a sync job. Returns parsed transactions and next cursor."
   def fetch_transactions(%SyncJob{} = job) do
     with {:ok, access_url} <- Vault.decrypt(job.encrypted_access_url_ref),
-         {:ok, resp} <- do_req_get(access_url, params: cursor_params(job.last_cursor), receive_timeout: 30_000) do
+         {:ok, resp} <- do_req_get(access_url <> "/accounts", params: cursor_params(job.last_cursor), receive_timeout: 30_000) do
       parse_response(resp)
     end
   end
@@ -42,21 +42,38 @@ defmodule Finapp.Sync.SimpleFin do
   defp cursor_params(cursor), do: [start_date: cursor]
 
   defp do_req_get(url, opts) do
-    opts = base_opts(opts)
+    {clean_url, opts} = extract_auth(url, base_opts(opts))
     case req_plug() do
-      nil -> Req.get(url, opts)
-      plug -> Req.get(url, Keyword.put(opts, :plug, plug))
+      nil -> Req.get(clean_url, opts)
+      plug -> Req.get(clean_url, Keyword.put(opts, :plug, plug))
     end
     |> handle_http_response()
   end
 
   defp do_req_post(url, opts) do
-    opts = base_opts(opts)
+    {clean_url, opts} = extract_auth(url, base_opts(opts))
     case req_plug() do
-      nil -> Req.post(url, opts)
-      plug -> Req.post(url, Keyword.put(opts, :plug, plug))
+      nil -> Req.post(clean_url, opts)
+      plug -> Req.post(clean_url, Keyword.put(opts, :plug, plug))
     end
     |> handle_http_response()
+  end
+
+  # Req doesn't auto-extract credentials from user:pass@host URLs.
+  # Parse them out and pass via the :auth option instead.
+  defp extract_auth(url, opts) do
+    uri = URI.parse(url)
+
+    case uri.userinfo do
+      nil ->
+        {url, opts}
+
+      userinfo ->
+        [user | rest] = String.split(userinfo, ":", parts: 2)
+        pass = List.first(rest, "")
+        clean_url = URI.to_string(%{uri | userinfo: nil})
+        {clean_url, Keyword.put(opts, :auth, {:basic, "#{user}:#{pass}"})}
+    end
   end
 
   # Disable Req's built-in retry so callers control retry behaviour (e.g. Oban snooze).

@@ -25,6 +25,8 @@ config :finapp, Oban,
     {Oban.Plugins.Pruner, max_age: 60 * 60 * 24 * 7},   # 7 days
     {Oban.Plugins.Cron,
      crontab: [
+       # Enqueue any sync jobs that have never completed — every 5 minutes
+       {"*/5 * * * *", Finapp.Sync.SyncSchedulerWorker},
        # Model distribution check — every 6 hours
        {"0 */6 * * *", Finapp.ML.ModelDistributionWorker},
        # Stale device cleanup — daily at 3 AM

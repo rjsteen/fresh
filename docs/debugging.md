@@ -134,6 +134,58 @@ bin/test --backend
 
 ---
 
+## SimpleFIN sync
+
+```sh
+# Check recent sync job errors
+docker exec privacyfinance-backend-1 mix run --eval '
+import Ecto.Query
+Finapp.Repo.one(from j in Oban.Job,
+  where: j.worker == "Finapp.Sync.BankSyncWorker",
+  order_by: [desc: j.inserted_at], limit: 1)
+|> Map.take([:state, :attempt, :errors])
+|> IO.inspect()'
+
+# Retry the last discarded BankSyncWorker job
+docker exec privacyfinance-backend-1 mix run --eval '
+import Ecto.Query
+job = Finapp.Repo.one(from j in Oban.Job,
+  where: j.worker == "Finapp.Sync.BankSyncWorker",
+  order_by: [desc: j.inserted_at], limit: 1)
+Oban.retry_job(job.id)'
+
+# Test SimpleFIN fetch directly without going through Oban
+docker exec privacyfinance-backend-1 mix run --eval '
+job = Finapp.Repo.one(Finapp.Sync.SyncJob)
+Finapp.Sync.SimpleFin.fetch_transactions(job) |> IO.inspect()'
+
+# Inspect the stored access URL (useful for diagnosing 404/403)
+docker exec privacyfinance-backend-1 mix run --eval '
+job = Finapp.Repo.one(Finapp.Sync.SyncJob)
+{:ok, url} = Finapp.Vault.decrypt(job.encrypted_access_url_ref)
+IO.puts(url)'
+
+# Delete all sync jobs and reconnect from scratch
+docker exec privacyfinance-backend-1 mix run --eval \
+  'Finapp.Repo.delete_all(Finapp.Sync.SyncJob)'
+```
+
+**SimpleFIN setup tokens are one-time use.** If a claim fails or the stored
+access URL returns 403, you must delete the sync job, generate a fresh token at
+bridge.simplefin.org, and paste it in the UI.
+
+**Code changes not taking effect in background workers:**
+Phoenix hot-reload only applies to web request handlers. Oban workers run in the
+persistent `phx.server` process and won't pick up changes until it restarts.
+Force a recompile then restart:
+
+```sh
+docker exec privacyfinance-backend-1 mix compile --force
+docker compose restart backend
+```
+
+---
+
 ## Common errors
 
 | Error | Cause | Fix |
