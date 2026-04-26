@@ -58,6 +58,10 @@ vi.mock('expo-file-system', () => ({
   EncodingType: { Base64: 'base64' },
 }));
 
+vi.mock('../ml', () => ({
+  handleModelUpdated: vi.fn().mockResolvedValue(undefined),
+}));
+
 // ---------------------------------------------------------------------------
 // Real imports (after mocks are registered)
 // ---------------------------------------------------------------------------
