@@ -87,7 +87,7 @@ defmodule Finapp.Sync.GoCardless do
       |> Enum.reject(&is_nil/1)
       |> Enum.max(fn -> nil end)
 
-    {:ok, %{transactions: transactions, next_cursor: next_cursor}}
+    {:ok, %{accounts: [], transactions: transactions, next_cursor: next_cursor}}
   end
 
   defp normalize_transaction(tx, account_id, pending?) do

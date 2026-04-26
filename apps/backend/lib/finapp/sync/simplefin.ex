@@ -38,12 +38,7 @@ defmodule Finapp.Sync.SimpleFin do
 
   # --- Private ---
 
-  # Default to 90 days back on first sync so we get historical transactions.
-  defp cursor_params(nil) do
-    start = DateTime.utc_now() |> DateTime.add(-90, :day) |> DateTime.to_unix()
-    [start_date: start]
-  end
-
+  defp cursor_params(nil), do: []
   defp cursor_params(cursor), do: [start_date: cursor]
 
   defp do_req_get(url, opts) do
