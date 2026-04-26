@@ -82,9 +82,10 @@ defmodule Finapp.Sync.BankSyncWorker do
       account_token_ref: sync_job.account_token_ref,
       transaction_count: length(result.transactions),
       cursor: result.next_cursor,
-      # Transactions are encrypted with the device's session key before broadcasting.
+      # Transactions and accounts are encrypted with the device's session key.
       # The Phoenix process handles this encryption; Postgres never touches this data.
-      encrypted_transactions: encrypt_for_device(sync_job.user_id, result.transactions)
+      encrypted_transactions: encrypt_for_device(sync_job.user_id, result.transactions),
+      encrypted_accounts: encrypt_for_device(sync_job.user_id, result.accounts)
     }
 
     Phoenix.PubSub.broadcast(

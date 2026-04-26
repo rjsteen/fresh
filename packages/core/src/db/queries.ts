@@ -25,12 +25,23 @@ export async function upsertAccount(
   db: SqliteDriver,
   account: Omit<Account, 'id' | 'created_at' | 'updated_at'> & { id?: string }
 ): Promise<Account> {
-  const id = account.id ?? uuidv4();
+  // When an external_id is provided (bank-synced account), resolve the local id
+  // first so we always upsert on the primary key — SQLite doesn't support multiple
+  // ON CONFLICT targets in a single INSERT statement.
+  let id = account.id ?? uuidv4();
+  if (account.external_id) {
+    const existing = await db.query<{ id: string }>(
+      'SELECT id FROM accounts WHERE external_id = ?',
+      [account.external_id]
+    );
+    if (existing[0]) id = existing[0].id;
+  }
+
   await db.execute(
     `INSERT INTO accounts
        (id, name, institution, type, currency, current_balance, available_balance,
-        last_synced_at, connection_type, sync_token_ref, is_active, display_order)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        last_synced_at, connection_type, sync_token_ref, external_id, is_active, display_order)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET
        name = excluded.name,
        current_balance = excluded.current_balance,
@@ -49,6 +60,7 @@ export async function upsertAccount(
       account.last_synced_at ?? null,
       account.connection_type,
       account.sync_token_ref ?? null,
+      account.external_id ?? null,
       account.is_active ? 1 : 0,
       account.display_order ?? 0,
     ]

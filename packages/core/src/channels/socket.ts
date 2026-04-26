@@ -23,7 +23,8 @@ export interface SyncCompletePayload {
   account_token_ref: string;   // Opaque — backend maps this to the account
   transaction_count: number;   // How many transactions are ready to fetch
   cursor: string;              // Continuation cursor for the bank API fetch
-  encrypted_batch?: string;    // Base64-encoded AES-256-GCM ciphertext (IV || ciphertext)
+  encrypted_batch?: string;    // Base64-encoded AES-256-GCM ciphertext of Transaction[]
+  encrypted_accounts?: string; // Base64-encoded AES-256-GCM ciphertext of SyncedAccount[]
 }
 
 export interface AlertTriggeredPayload {

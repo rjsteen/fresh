@@ -12,6 +12,10 @@
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { vi, type Mock } from 'vitest';
+
+vi.mock('expo-crypto', () => ({
+  randomUUID: () => 'test-uuid-1234',
+}));
 import { AccountsScreen } from './AccountsScreen';
 import { renderWithProviders } from '../test/renderWithProviders';
 import { makeTestDb } from '../test/makeTestDb';
