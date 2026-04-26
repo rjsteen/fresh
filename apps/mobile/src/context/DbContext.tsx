@@ -26,7 +26,7 @@ function base64ToArrayBuffer(base64: string): ArrayBuffer {
   return bytes.buffer;
 }
 
-function SyncHandler({ db }: { db: DbClient }) {
+export function SyncHandler({ db }: { db: DbClient }) {
   const token = useAuthStore((s) => s.token);
   const ackSyncRef = useRef<(ref: string) => void>(() => {});
 
