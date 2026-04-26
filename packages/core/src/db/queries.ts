@@ -5,7 +5,7 @@
 
 import { v4 as uuidv4 } from 'uuid';
 import type { SqliteDriver } from './client';
-import type { Account, Transaction, AlertRule, RecurringPattern } from './schema';
+import type { Account, Transaction, AlertRule, Budget, RecurringPattern } from './schema';
 
 // ---------------------------------------------------------------------------
 // Accounts
@@ -185,6 +185,195 @@ export async function categorizeTransaction(
      WHERE id = ?`,
     [categoryId, source, confidence ?? null, transactionId]
   );
+}
+
+// ---------------------------------------------------------------------------
+// Active budgets
+// ---------------------------------------------------------------------------
+
+export async function getActiveBudgets(
+  db: SqliteDriver,
+  asOfDate: string = new Date().toISOString().slice(0, 10)
+): Promise<Budget[]> {
+  type Row = Omit<Budget, 'is_active'> & { is_active: 0 | 1 };
+  const rows = await db.query<Row>(
+    `SELECT * FROM budgets
+     WHERE is_active = 1
+       AND start_date <= ?
+       AND (end_date IS NULL OR end_date >= ?)
+     ORDER BY created_at DESC`,
+    [asOfDate, asOfDate]
+  );
+  return rows.map((r) => ({ ...r, is_active: true }));
+}
+
+// ---------------------------------------------------------------------------
+// Budget progress (with rollover)
+// ---------------------------------------------------------------------------
+
+export interface BudgetProgress {
+  line_id: string;
+  name: string;
+  limit_amount: number;
+  /** Unspent carry-forward from the previous period; 0 when rollover is off. */
+  rollover_amount: number;
+  /** limit_amount + rollover_amount */
+  effective_limit: number;
+  spent: number;
+  remaining: number;
+  pct_used: number;
+}
+
+/** Returns the ISO start and end dates for a named period given a reference date. */
+function _periodBounds(
+  periodType: string,
+  now: Date
+): { start: string; end: string } {
+  const y = now.getUTCFullYear();
+  const m = now.getUTCMonth();
+  const d = now.getUTCDate();
+  switch (periodType) {
+    case 'monthly':
+      return {
+        start: new Date(Date.UTC(y, m, 1)).toISOString().slice(0, 10),
+        end: new Date(Date.UTC(y, m + 1, 0)).toISOString().slice(0, 10),
+      };
+    case 'weekly': {
+      const day = now.getUTCDay(); // 0=Sun
+      const startOff = day === 0 ? -6 : 1 - day; // Monday start
+      const endOff = day === 0 ? 0 : 7 - day;   // Sunday end
+      return {
+        start: new Date(Date.UTC(y, m, d + startOff)).toISOString().slice(0, 10),
+        end: new Date(Date.UTC(y, m, d + endOff)).toISOString().slice(0, 10),
+      };
+    }
+    case 'annual':
+      return { start: `${y}-01-01`, end: `${y}-12-31` };
+    default:
+      throw new Error(`Unknown period_type: ${periodType}`);
+  }
+}
+
+/** Returns start/end for the period immediately preceding the one containing `now`. */
+function _prevPeriodBounds(
+  periodType: string,
+  now: Date
+): { start: string; end: string } | null {
+  switch (periodType) {
+    case 'monthly': {
+      const y = now.getUTCFullYear();
+      const m = now.getUTCMonth();
+      // Use the 15th of the previous month as the reference
+      return _periodBounds('monthly', new Date(Date.UTC(y, m - 1, 15)));
+    }
+    case 'weekly': {
+      const y = now.getUTCFullYear();
+      const m = now.getUTCMonth();
+      const d = now.getUTCDate();
+      return _periodBounds('weekly', new Date(Date.UTC(y, m, d - 7)));
+    }
+    case 'annual': {
+      const y = now.getUTCFullYear();
+      return _periodBounds('annual', new Date(Date.UTC(y - 1, 6, 1)));
+    }
+    default:
+      return null;
+  }
+}
+
+/**
+ * Returns per-line spending progress for a budget's current period.
+ * Lines with rollover=1 have the unspent amount from the previous period
+ * added to their effective limit.
+ */
+export async function getBudgetProgress(
+  db: SqliteDriver,
+  budgetId: string,
+  asOfDate: string = new Date().toISOString().slice(0, 10)
+): Promise<BudgetProgress[]> {
+  type BudgetRow = Omit<Budget, 'is_active'> & { is_active: 0 | 1 };
+  const budgets = await db.query<BudgetRow>('SELECT * FROM budgets WHERE id = ?', [budgetId]);
+  if (budgets.length === 0) return [];
+  const budget = budgets[0];
+
+  const now = new Date(asOfDate + 'T12:00:00Z');
+  let start: string;
+  let end: string;
+  let prevBounds: { start: string; end: string } | null = null;
+
+  if (budget.period_type === 'custom') {
+    start = budget.start_date;
+    // end_date should always be set for custom budgets; fall back to asOfDate as a safety net
+    end = budget.end_date ?? asOfDate;
+  } else {
+    ({ start, end } = _periodBounds(budget.period_type, now));
+    prevBounds = _prevPeriodBounds(budget.period_type, now);
+  }
+
+  type LineRow = {
+    line_id: string;
+    name: string;
+    limit_amount: number;
+    rollover: 0 | 1;
+    category_id: string | null;
+    spent: number;
+  };
+
+  const lines = await db.query<LineRow>(
+    `SELECT
+       bl.id       AS line_id,
+       bl.name,
+       bl.limit_amount,
+       bl.rollover,
+       bl.category_id,
+       COALESCE(ABS(SUM(CASE WHEN t.amount < 0 THEN t.amount ELSE 0 END)), 0) AS spent
+     FROM budget_lines bl
+     LEFT JOIN transactions t
+       ON  t.category_id = bl.category_id
+       AND t.date BETWEEN ? AND ?
+       AND t.pending = 0
+     WHERE bl.budget_id = ?
+     GROUP BY bl.id
+     ORDER BY bl.name ASC`,
+    [start, end, budgetId]
+  );
+
+  // TODO: replace with a single query joining prev-period spending for all rollover lines at once
+  const result: BudgetProgress[] = [];
+  for (const line of lines) {
+    let rollover_amount = 0;
+
+    if (line.rollover === 1 && prevBounds !== null && line.category_id !== null) {
+      const prevRows = await db.query<{ prev_spent: number }>(
+        `SELECT COALESCE(ABS(SUM(CASE WHEN amount < 0 THEN amount ELSE 0 END)), 0) AS prev_spent
+         FROM transactions
+         WHERE category_id = ? AND date BETWEEN ? AND ? AND pending = 0`,
+        [line.category_id, prevBounds.start, prevBounds.end]
+      );
+      const prevUnspent = line.limit_amount - prevRows[0].prev_spent;
+      rollover_amount = prevUnspent > 0 ? prevUnspent : 0;
+    }
+
+    const effective_limit = line.limit_amount + rollover_amount;
+    const remaining = effective_limit - line.spent;
+    const pct_used =
+      effective_limit > 0
+        ? Math.round((line.spent / effective_limit) * 100 * 10) / 10
+        : 0;
+
+    result.push({
+      line_id: line.line_id,
+      name: line.name,
+      limit_amount: line.limit_amount,
+      rollover_amount,
+      effective_limit,
+      spent: line.spent,
+      remaining,
+      pct_used,
+    });
+  }
+
+  return result;
 }
 
 // ---------------------------------------------------------------------------

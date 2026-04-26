@@ -14,6 +14,8 @@ import {
   upsertTransaction,
   categorizeTransaction,
   getBudgetSummary,
+  getActiveBudgets,
+  getBudgetProgress,
   getEnabledAlertRules,
   getAllAlertRules,
   upsertAlertRule,
@@ -299,6 +301,281 @@ describe('getBudgetSummary', () => {
     await upsertTransaction(db, baseTx('acc-1', { amount: -50, category_id: 'cat-food', date: '2024-02-15' }));
     const summary = await getBudgetSummary(db, 'bud-1', '2024-03-01', '2024-03-31');
     expect(summary[0].spent).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// getActiveBudgets
+// ---------------------------------------------------------------------------
+
+describe('getActiveBudgets', () => {
+  it('returns empty when no budgets exist', async () => {
+    expect(await getActiveBudgets(db, '2024-03-15')).toEqual([]);
+  });
+
+  it('returns active budget whose start_date <= today and end_date is null', async () => {
+    await db.execute(
+      `INSERT INTO budgets (id, name, period_type, start_date, is_active)
+       VALUES ('b1', 'Monthly', 'monthly', '2024-01-01', 1)`
+    );
+    const result = await getActiveBudgets(db, '2024-03-15');
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe('b1');
+    expect(result[0].is_active).toBe(true);
+  });
+
+  it('returns active budget when today is within [start_date, end_date]', async () => {
+    await db.execute(
+      `INSERT INTO budgets (id, name, period_type, start_date, end_date, is_active)
+       VALUES ('b2', 'Custom', 'custom', '2024-03-01', '2024-03-31', 1)`
+    );
+    expect(await getActiveBudgets(db, '2024-03-15')).toHaveLength(1);
+    expect(await getActiveBudgets(db, '2024-03-31')).toHaveLength(1);
+  });
+
+  it('excludes budget whose end_date is before today', async () => {
+    await db.execute(
+      `INSERT INTO budgets (id, name, period_type, start_date, end_date, is_active)
+       VALUES ('b3', 'Old', 'custom', '2024-01-01', '2024-02-28', 1)`
+    );
+    expect(await getActiveBudgets(db, '2024-03-15')).toHaveLength(0);
+  });
+
+  it('excludes budget whose start_date is in the future', async () => {
+    await db.execute(
+      `INSERT INTO budgets (id, name, period_type, start_date, is_active)
+       VALUES ('b4', 'Future', 'monthly', '2024-04-01', 1)`
+    );
+    expect(await getActiveBudgets(db, '2024-03-15')).toHaveLength(0);
+  });
+
+  it('excludes inactive budget', async () => {
+    await db.execute(
+      `INSERT INTO budgets (id, name, period_type, start_date, is_active)
+       VALUES ('b5', 'Inactive', 'monthly', '2024-01-01', 0)`
+    );
+    expect(await getActiveBudgets(db, '2024-03-15')).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// getBudgetProgress
+// ---------------------------------------------------------------------------
+
+describe('getBudgetProgress', () => {
+  const TODAY = '2024-03-15'; // Friday in March 2024
+
+  beforeEach(async () => {
+    await upsertAccount(db, baseAccount());
+    await db.execute(`INSERT INTO categories (id, name) VALUES ('cat-food', 'Food')`);
+    await db.execute(
+      `INSERT INTO budgets (id, name, period_type, start_date, is_active)
+       VALUES ('bud-1', 'Monthly', 'monthly', '2024-03-01', 1)`
+    );
+    await db.execute(
+      `INSERT INTO budget_lines (id, budget_id, name, category_id, limit_amount, rollover)
+       VALUES ('bl-1', 'bud-1', 'Food', 'cat-food', 300, 0)`
+    );
+  });
+
+  it('returns empty array when budget not found', async () => {
+    expect(await getBudgetProgress(db, 'no-such-budget', TODAY)).toEqual([]);
+  });
+
+  it('returns zero spent when no transactions in the current period', async () => {
+    const progress = await getBudgetProgress(db, 'bud-1', TODAY);
+    expect(progress).toHaveLength(1);
+    expect(progress[0].spent).toBe(0);
+    expect(progress[0].remaining).toBe(300);
+    expect(progress[0].pct_used).toBe(0);
+    expect(progress[0].rollover_amount).toBe(0);
+    expect(progress[0].effective_limit).toBe(300);
+  });
+
+  it('aggregates spending for the current monthly period', async () => {
+    await upsertTransaction(db, baseTx('acc-1', { amount: -100, category_id: 'cat-food', date: '2024-03-05' }));
+    await upsertTransaction(db, baseTx('acc-1', { amount: -50, category_id: 'cat-food', date: '2024-03-12' }));
+    // Previous month — should not count
+    await upsertTransaction(db, baseTx('acc-1', { amount: -200, category_id: 'cat-food', date: '2024-02-15' }));
+
+    const [line] = await getBudgetProgress(db, 'bud-1', TODAY);
+    expect(line.spent).toBe(150);
+    expect(line.remaining).toBe(150);
+    expect(line.pct_used).toBe(50);
+  });
+
+  it('excludes pending transactions', async () => {
+    await upsertTransaction(db, baseTx('acc-1', { amount: -100, category_id: 'cat-food', date: '2024-03-10', pending: true }));
+    const [line] = await getBudgetProgress(db, 'bud-1', TODAY);
+    expect(line.spent).toBe(0);
+  });
+
+  it('carries forward unspent amount from previous period when rollover=1', async () => {
+    // Enable rollover on the line
+    await db.execute(`UPDATE budget_lines SET rollover = 1 WHERE id = 'bl-1'`);
+    // Previous month: spent $100 of $300 → $200 unspent → rollover $200
+    await upsertTransaction(db, baseTx('acc-1', { amount: -100, category_id: 'cat-food', date: '2024-02-15' }));
+    // Current month: spent $50
+    await upsertTransaction(db, baseTx('acc-1', { amount: -50, category_id: 'cat-food', date: '2024-03-10' }));
+
+    const [line] = await getBudgetProgress(db, 'bud-1', TODAY);
+    expect(line.rollover_amount).toBe(200);
+    expect(line.effective_limit).toBe(500); // 300 + 200
+    expect(line.spent).toBe(50);
+    expect(line.remaining).toBe(450);
+    expect(line.pct_used).toBe(10);
+  });
+
+  it('does not carry forward when previous period was over budget', async () => {
+    await db.execute(`UPDATE budget_lines SET rollover = 1 WHERE id = 'bl-1'`);
+    // Previous month: spent $350 of $300 → over budget, no rollover
+    await upsertTransaction(db, baseTx('acc-1', { amount: -350, category_id: 'cat-food', date: '2024-02-15' }));
+
+    const [line] = await getBudgetProgress(db, 'bud-1', TODAY);
+    expect(line.rollover_amount).toBe(0);
+    expect(line.effective_limit).toBe(300);
+  });
+
+  it('does not carry forward when rollover=0 even if previous period has unspent', async () => {
+    // rollover stays 0 (default)
+    await upsertTransaction(db, baseTx('acc-1', { amount: -50, category_id: 'cat-food', date: '2024-02-15' }));
+    const [line] = await getBudgetProgress(db, 'bud-1', TODAY);
+    expect(line.rollover_amount).toBe(0);
+    expect(line.effective_limit).toBe(300);
+  });
+
+  it('scopes monthly period to the month containing asOfDate (historical view)', async () => {
+    // Selecting "Last month" passes ref.start = first of last month as asOfDate
+    await upsertTransaction(db, baseTx('acc-1', { amount: -80, category_id: 'cat-food', date: '2024-02-10' }));
+    // March transaction should not count when viewing February
+    await upsertTransaction(db, baseTx('acc-1', { amount: -50, category_id: 'cat-food', date: '2024-03-05' }));
+
+    const [line] = await getBudgetProgress(db, 'bud-1', '2024-02-01');
+    expect(line.spent).toBe(80);
+    expect(line.remaining).toBe(220);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// getBudgetProgress — weekly period
+// ---------------------------------------------------------------------------
+
+describe('getBudgetProgress (weekly)', () => {
+  // 2024-03-11 is a Monday. Week = March 11–17.
+  const TODAY = '2024-03-15'; // Friday
+
+  beforeEach(async () => {
+    await upsertAccount(db, baseAccount());
+    await db.execute(`INSERT INTO categories (id, name) VALUES ('cat-food', 'Food')`);
+    await db.execute(
+      `INSERT INTO budgets (id, name, period_type, start_date, is_active)
+       VALUES ('bud-w', 'Weekly', 'weekly', '2024-03-11', 1)`
+    );
+    await db.execute(
+      `INSERT INTO budget_lines (id, budget_id, name, category_id, limit_amount, rollover)
+       VALUES ('bl-w', 'bud-w', 'Food', 'cat-food', 100, 0)`
+    );
+  });
+
+  it('includes transactions within the current Mon–Sun week', async () => {
+    await upsertTransaction(db, baseTx('acc-1', { amount: -40, category_id: 'cat-food', date: '2024-03-11' })); // Mon
+    await upsertTransaction(db, baseTx('acc-1', { amount: -20, category_id: 'cat-food', date: '2024-03-14' })); // Thu
+    // Previous week — should not count
+    await upsertTransaction(db, baseTx('acc-1', { amount: -50, category_id: 'cat-food', date: '2024-03-10' })); // Sun prev week
+
+    const [line] = await getBudgetProgress(db, 'bud-w', TODAY);
+    expect(line.spent).toBe(60);
+    expect(line.remaining).toBe(40);
+  });
+
+  it('includes Sunday as the last day of the week', async () => {
+    await upsertTransaction(db, baseTx('acc-1', { amount: -30, category_id: 'cat-food', date: '2024-03-17' })); // Sun
+    const [line] = await getBudgetProgress(db, 'bud-w', TODAY);
+    expect(line.spent).toBe(30);
+  });
+
+  it('rolls over unspent from previous week', async () => {
+    await db.execute(`UPDATE budget_lines SET rollover = 1 WHERE id = 'bl-w'`);
+    // Previous week (March 4–10): spent $30 of $100 → $70 rollover
+    await upsertTransaction(db, baseTx('acc-1', { amount: -30, category_id: 'cat-food', date: '2024-03-07' }));
+    // This week: spent $20
+    await upsertTransaction(db, baseTx('acc-1', { amount: -20, category_id: 'cat-food', date: '2024-03-12' }));
+
+    const [line] = await getBudgetProgress(db, 'bud-w', TODAY);
+    expect(line.rollover_amount).toBe(70);
+    expect(line.effective_limit).toBe(170);
+    expect(line.spent).toBe(20);
+    expect(line.remaining).toBe(150);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// getBudgetProgress — annual period
+// ---------------------------------------------------------------------------
+
+describe('getBudgetProgress (annual)', () => {
+  const TODAY = '2024-03-15';
+
+  beforeEach(async () => {
+    await upsertAccount(db, baseAccount());
+    await db.execute(`INSERT INTO categories (id, name) VALUES ('cat-food', 'Food')`);
+    await db.execute(
+      `INSERT INTO budgets (id, name, period_type, start_date, is_active)
+       VALUES ('bud-a', 'Annual', 'annual', '2024-01-01', 1)`
+    );
+    await db.execute(
+      `INSERT INTO budget_lines (id, budget_id, name, category_id, limit_amount, rollover)
+       VALUES ('bl-a', 'bud-a', 'Food', 'cat-food', 1200, 0)`
+    );
+  });
+
+  it('includes transactions in the current calendar year', async () => {
+    await upsertTransaction(db, baseTx('acc-1', { amount: -100, category_id: 'cat-food', date: '2024-01-15' }));
+    await upsertTransaction(db, baseTx('acc-1', { amount: -200, category_id: 'cat-food', date: '2024-12-31' }));
+    // Previous year — should not count
+    await upsertTransaction(db, baseTx('acc-1', { amount: -500, category_id: 'cat-food', date: '2023-12-31' }));
+
+    const [line] = await getBudgetProgress(db, 'bud-a', TODAY);
+    expect(line.spent).toBe(300);
+    expect(line.remaining).toBe(900);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// getBudgetProgress — custom period
+// ---------------------------------------------------------------------------
+
+describe('getBudgetProgress (custom)', () => {
+  beforeEach(async () => {
+    await upsertAccount(db, baseAccount());
+    await db.execute(`INSERT INTO categories (id, name) VALUES ('cat-food', 'Food')`);
+    await db.execute(
+      `INSERT INTO budgets (id, name, period_type, start_date, end_date, is_active)
+       VALUES ('bud-c', 'Custom', 'custom', '2024-03-01', '2024-03-31', 1)`
+    );
+    await db.execute(
+      `INSERT INTO budget_lines (id, budget_id, name, category_id, limit_amount, rollover)
+       VALUES ('bl-c', 'bud-c', 'Food', 'cat-food', 500, 0)`
+    );
+  });
+
+  it('uses start_date and end_date exactly, regardless of asOfDate', async () => {
+    await upsertTransaction(db, baseTx('acc-1', { amount: -150, category_id: 'cat-food', date: '2024-03-10' }));
+    // Outside range — should not count
+    await upsertTransaction(db, baseTx('acc-1', { amount: -200, category_id: 'cat-food', date: '2024-02-28' }));
+    await upsertTransaction(db, baseTx('acc-1', { amount: -200, category_id: 'cat-food', date: '2024-04-01' }));
+
+    const [line] = await getBudgetProgress(db, 'bud-c', '2024-04-15');
+    expect(line.spent).toBe(150);
+    expect(line.remaining).toBe(350);
+  });
+
+  it('includes transactions on the boundary dates', async () => {
+    await upsertTransaction(db, baseTx('acc-1', { amount: -50, category_id: 'cat-food', date: '2024-03-01' }));
+    await upsertTransaction(db, baseTx('acc-1', { amount: -75, category_id: 'cat-food', date: '2024-03-31' }));
+
+    const [line] = await getBudgetProgress(db, 'bud-c', '2024-03-15');
+    expect(line.spent).toBe(125);
   });
 });
 

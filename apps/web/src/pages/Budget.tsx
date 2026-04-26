@@ -317,6 +317,11 @@ const EmptyBody = styled.div`
   line-height: ${({ theme }) => theme.font.lineHeight.relaxed};
 `;
 
+const EmptyBodyLink = styled.a`
+  color: inherit;
+  text-decoration: underline;
+`;
+
 const FormSection = styled.div`
   display: flex;
   flex-direction: column;
@@ -1176,6 +1181,13 @@ export function Budget() {
           <EmptyTitle>No budgets yet</EmptyTitle>
           <EmptyBody>
             Create a budget to track spending by category and stay on top of your finances.
+            <br />
+            <br />
+            Your financial data lives on your device — nothing is sent to a server.{' '}
+            <EmptyBodyLink href="https://privacyfinance.app/mobile" target="_blank" rel="noreferrer">
+              Get the mobile app
+            </EmptyBodyLink>{' '}
+            for the best experience.
           </EmptyBody>
           <PrimaryButton onClick={openCreate}>Create your first budget</PrimaryButton>
         </EmptyState>
