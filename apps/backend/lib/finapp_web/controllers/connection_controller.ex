@@ -1,7 +1,7 @@
 defmodule FinappWeb.ConnectionController do
   use Phoenix.Controller, formats: [:json]
 
-  alias Finapp.{Repo, Sync, Vault}
+  alias Finapp.{Repo, Sync}
   alias Finapp.Sync.{GoCardless, SimpleFin, SyncJob}
   alias Guardian.Plug
 
@@ -10,8 +10,7 @@ defmodule FinappWeb.ConnectionController do
   def simplefin_claim(conn, %{"setup_token" => setup_token, "account_token_ref" => token_ref}) do
     user = Plug.current_resource(conn)
 
-    with {:ok, access_url} <- SimpleFin.claim_access_url(setup_token),
-         {:ok, encrypted} <- Vault.encrypt(access_url),
+    with {:ok, encrypted} <- SimpleFin.claim_access_url(setup_token),
          {:ok, job} <-
            Repo.insert(
              SyncJob.changeset(%SyncJob{}, %{
