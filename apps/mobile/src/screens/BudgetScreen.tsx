@@ -3,18 +3,12 @@ import { View, Text, ScrollView, StyleSheet, TouchableOpacity } from 'react-nati
 import { useQuery } from '@tanstack/react-query';
 import { BarChart } from 'react-native-gifted-charts';
 import { format, startOfMonth, endOfMonth, subMonths } from 'date-fns';
-import { getSpendingByCategory, getBudgetSummary } from '@fresh/core/db';
-import type { SpendingByCategory, BudgetSummary } from '@fresh/core/db';
+import { getSpendingByCategory, getActiveBudgets, getBudgetProgress } from '@fresh/core/db';
+import type { SpendingByCategory, Budget, BudgetProgress } from '@fresh/core/db';
 import { useDb } from '../context/DbContext';
 
 function currency(n: number) {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(n);
-}
-
-interface Budget {
-  id: string;
-  name: string;
-  is_active: 0 | 1;
 }
 
 const PERIOD_OPTIONS = [
@@ -41,20 +35,19 @@ export function BudgetScreen() {
     queryFn: () => getSpendingByCategory(db.raw, ref.start, ref.end),
   });
 
-  // Active budget (if any) — query budgets table directly
+  // Active budgets — uses current date range from the budget's own period_type
   const { data: budgets = [] } = useQuery<Budget[]>({
     queryKey: ['budgets'],
-    queryFn: () =>
-      db.raw.query<Budget>('SELECT id, name, is_active FROM budgets WHERE is_active = 1 ORDER BY created_at DESC'),
+    queryFn: () => getActiveBudgets(db.raw),
   });
 
   const activeBudget = budgets[0] ?? null;
 
-  const { data: budgetLines = [] } = useQuery<BudgetSummary[]>({
-    queryKey: ['budget-summary', activeBudget?.id, ref.start, ref.end],
+  const { data: budgetLines = [] } = useQuery<BudgetProgress[]>({
+    queryKey: ['budget-progress', activeBudget?.id, ref.start],
     queryFn: () =>
       activeBudget
-        ? getBudgetSummary(db.raw, activeBudget.id, ref.start, ref.end)
+        ? getBudgetProgress(db.raw, activeBudget.id, ref.start)
         : Promise.resolve([]),
     enabled: !!activeBudget,
   });
@@ -161,10 +154,10 @@ export function BudgetScreen() {
               <View key={line.line_id} style={styles.budgetLine}>
                 <View style={styles.budgetLineHeader}>
                   <Text style={styles.budgetLineName} numberOfLines={1}>
-                    {line.line_name}
+                    {line.name}
                   </Text>
                   <Text style={[styles.budgetLineAmt, overBudget && { color: '#f87171' }]}>
-                    {currency(line.spent)} / {currency(line.limit_amount)}
+                    {currency(line.spent)} / {currency(line.effective_limit)}
                   </Text>
                 </View>
                 <View style={styles.budgetBarWrap}>
@@ -183,6 +176,11 @@ export function BudgetScreen() {
                     ? `${currency(Math.abs(line.remaining))} over budget`
                     : `${currency(line.remaining)} remaining`}
                 </Text>
+                {line.rollover_amount > 0 && (
+                  <Text style={styles.rolloverNote}>
+                    ↻ includes {currency(line.rollover_amount)} rolled over
+                  </Text>
+                )}
               </View>
             );
           })}
@@ -267,5 +265,6 @@ const styles = StyleSheet.create({
   },
   budgetBarFill: { height: '100%', borderRadius: 3 },
   budgetRemaining: { color: '#64748b', fontSize: 11 },
+  rolloverNote: { color: '#22c55e', fontSize: 10, marginTop: 2 },
   empty: { color: '#64748b', textAlign: 'center', paddingVertical: 40, fontSize: 14 },
 });
