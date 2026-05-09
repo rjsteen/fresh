@@ -13,7 +13,7 @@
 
 import { upsertTransaction, upsertAccount, categorizeTransaction, hasAlertFired, recordAlertFired, getMissedRecurringCharges } from '../db/queries';
 import type { SqliteDriver } from '../db/client';
-import type { Transaction, RecurringPattern } from '../db/schema';
+import type { RecurringPattern } from '../db/schema';
 
 export interface SyncedAccount {
   external_id: string;
@@ -24,6 +24,21 @@ export interface SyncedAccount {
   available_balance: number | null;
   type: string;
 }
+
+// Wire format from the backend — uses account_external_id (bank's ID) instead of
+// the local SQLite account_id. Resolved to account_id before DB insert.
+export interface WireTransaction {
+  account_external_id: string;
+  external_id: string | null;
+  amount: number;
+  currency: string;
+  description: string;
+  merchant_name: string | null;
+  date: string;
+  posted_at: string | null;
+  pending: boolean;
+}
+
 import type { SyncCompletePayload } from '../channels/socket';
 import type { TransactionCategorizer, AnomalyDetector } from '../ml/inference';
 import { ruleEngine } from '../budget/rules';
@@ -38,7 +53,7 @@ import { detectRecurringPatterns } from '../budget/recurring';
 export async function decryptBatch(
   encryptedBatch: ArrayBuffer,
   deviceKey: CryptoKey
-): Promise<Transaction[]> {
+): Promise<WireTransaction[]> {
   const bytes = new Uint8Array(encryptedBatch);
   const iv = bytes.slice(0, 12);
   const ciphertext = bytes.slice(12);
@@ -47,7 +62,7 @@ export async function decryptBatch(
     deviceKey,
     ciphertext
   );
-  return JSON.parse(new TextDecoder().decode(plaintext)) as Transaction[];
+  return JSON.parse(new TextDecoder().decode(plaintext)) as WireTransaction[];
 }
 
 export interface SyncBatchDeps {
@@ -87,7 +102,10 @@ export async function processSyncBatch(
     return;
   }
 
-  // Upsert accounts first so transactions can reference them by account_id
+  // Upsert accounts first so transactions can reference them by account_id.
+  // Build a map of external_id → local SQLite id for transaction resolution.
+  const accountIdByExternalId = new Map<string, string>();
+
   if (encrypted_accounts) {
     const accountBytes = Uint8Array.from(atob(encrypted_accounts), c => c.charCodeAt(0));
     const accountIv = accountBytes.slice(0, 12);
@@ -99,7 +117,8 @@ export async function processSyncBatch(
     );
     const accounts = JSON.parse(new TextDecoder().decode(accountPlaintext)) as SyncedAccount[];
     for (const account of accounts) {
-      await upsertAccount(db, {
+      console.log('[Sync] upserting account', JSON.stringify(account));
+      const upserted = await upsertAccount(db, {
         name: account.name,
         institution: account.institution,
         type: account.type as 'checking' | 'savings' | 'credit' | 'investment' | 'cash',
@@ -112,6 +131,7 @@ export async function processSyncBatch(
         external_id: account.external_id,
         is_active: true,
       });
+      accountIdByExternalId.set(account.external_id, upserted.id);
     }
   }
 
@@ -127,10 +147,31 @@ export async function processSyncBatch(
     bytes[i] = binary.charCodeAt(i);
   }
 
-  const transactions = await decryptBatch(bytes.buffer, deviceKey);
+  const wireTransactions = await decryptBatch(bytes.buffer, deviceKey);
 
-  for (const tx of transactions) {
-    const saved = await upsertTransaction(db, tx);
+  for (const tx of wireTransactions) {
+    const account_id = accountIdByExternalId.get(tx.account_external_id);
+    if (!account_id) {
+      console.warn('[processSyncBatch] no local account for external_id', tx.account_external_id);
+      continue;
+    }
+    console.log('[Sync] upserting tx', JSON.stringify({ account_id, ...tx }));
+    const saved = await upsertTransaction(db, {
+      account_id,
+      external_id: tx.external_id,
+      amount: tx.amount,
+      currency: tx.currency,
+      description: tx.description ?? '',
+      merchant_name: tx.merchant_name ?? null,
+      date: tx.date != null ? String(tx.date) : '',
+      posted_at: tx.posted_at != null ? String(tx.posted_at) : null,
+      pending: tx.pending ?? false,
+      category_id: null,
+      category_source: null,
+      ml_confidence: null,
+      notes: null,
+      tags: null,
+    });
 
     if (categorizer?.isLoaded && !saved.category_id) {
       try {

@@ -24,6 +24,10 @@ if database_url = System.get_env("DATABASE_URL") do
     pool_size: String.to_integer(System.get_env("POOL_SIZE") || "20")
 end
 
+if redis_url = System.get_env("REDIS_URL") do
+  config :finapp, :redis_url, redis_url
+end
+
 if config_env() == :prod do
   database_url =
     System.get_env("DATABASE_URL") ||

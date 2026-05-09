@@ -16,7 +16,7 @@ import type { DbClient } from '@fresh/core/db';
 // Module mocks
 // ---------------------------------------------------------------------------
 
-vi.mock('../App', () => ({ useDb: vi.fn() }));
+vi.mock('../context', () => ({ useDb: vi.fn() }));
 
 vi.mock('../hooks/useAuth', () => ({
   useAuth: () => ({ isAuthenticated: true, token: 'test-token', storeToken: vi.fn(), logout: vi.fn() }),
@@ -34,7 +34,7 @@ vi.mock('../db/driver', () => ({
   getOrCreateDbKey: vi.fn().mockResolvedValue(new Uint8Array(32)),
 }));
 
-import { useDb } from '../App';
+import { useDb } from '../context';
 
 // ---------------------------------------------------------------------------
 // Global fetch stub — returns empty sync jobs list by default

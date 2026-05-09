@@ -12,6 +12,8 @@ defmodule Finapp.Sync.SimpleFin do
   in plaintext in Postgres.
   """
 
+  require Logger
+
   alias Finapp.Sync.{Account, SyncJob, Transaction}
   alias Finapp.Vault
 
@@ -38,8 +40,24 @@ defmodule Finapp.Sync.SimpleFin do
 
   # --- Private ---
 
-  defp cursor_params(nil), do: []
-  defp cursor_params(cursor), do: [start_date: cursor]
+  # SimpleFIN protocol uses "start-date" (hyphen), not start_date.
+  # On initial fetch (no cursor) default to 90 days back so we get meaningful history.
+  @initial_lookback_seconds 90 * 24 * 60 * 60
+
+  defp cursor_params(nil) do
+    start = System.system_time(:second) - @initial_lookback_seconds
+    Logger.info("[SimpleFIN] cursor=nil, using start-date=#{start}")
+    [{"start-date", start}]
+  end
+
+  defp cursor_params(cursor) do
+    ts = case Integer.parse(cursor) do
+      {int, ""} -> int
+      _ -> cursor
+    end
+    Logger.info("[SimpleFIN] cursor=#{cursor}, using start-date=#{ts}")
+    [{"start-date", ts}]
+  end
 
   defp do_req_get(url, opts) do
     {clean_url, opts} = extract_auth(url, base_opts(opts))
@@ -88,6 +106,8 @@ defmodule Finapp.Sync.SimpleFin do
   defp parse_response(%{body: body}) when is_map(body) do
     raw_accounts = body["accounts"] || []
 
+    Logger.info("[SimpleFIN] accounts=#{length(raw_accounts)}, tx_counts=#{inspect(Enum.map(raw_accounts, fn a -> {a["id"], length(a["transactions"] || [])} end))}")
+
     accounts = Enum.map(raw_accounts, &normalize_account/1)
 
     transactions =
@@ -97,10 +117,16 @@ defmodule Finapp.Sync.SimpleFin do
       end)
 
     next_cursor =
-      transactions
-      |> Enum.map(& &1.posted_at)
+      raw_accounts
+      |> Enum.flat_map(fn account -> account["transactions"] || [] end)
+      |> Enum.map(fn tx -> tx["posted"] end)
       |> Enum.reject(&is_nil/1)
       |> Enum.max(fn -> nil end)
+      |> case do
+        nil -> nil
+        ts when is_integer(ts) -> Integer.to_string(ts)
+        ts -> ts
+      end
 
     {:ok, %{accounts: accounts, transactions: transactions, next_cursor: next_cursor}}
   end
@@ -119,8 +145,8 @@ defmodule Finapp.Sync.SimpleFin do
       amount: parse_amount(tx["amount"]),
       description: tx["description"] || "",
       merchant_name: nil,
-      date: tx["transacted_at"] || tx["posted"],
-      posted_at: tx["posted"],
+      date: unix_to_date(tx["transacted_at"] || tx["posted"]),
+      posted_at: unix_to_iso(tx["posted"]),
       pending: tx["pending"] == true,
       currency: account["currency"] || "USD"
     }
@@ -148,6 +174,18 @@ defmodule Finapp.Sync.SimpleFin do
     end
   end
   defp infer_account_type(_), do: "checking"
+
+  defp unix_to_date(nil), do: nil
+  defp unix_to_date(ts) when is_integer(ts) do
+    ts |> DateTime.from_unix!() |> DateTime.to_date() |> Date.to_iso8601()
+  end
+  defp unix_to_date(ts) when is_binary(ts), do: ts
+
+  defp unix_to_iso(nil), do: nil
+  defp unix_to_iso(ts) when is_integer(ts) do
+    ts |> DateTime.from_unix!() |> DateTime.truncate(:second) |> DateTime.to_iso8601()
+  end
+  defp unix_to_iso(ts) when is_binary(ts), do: ts
 
   defp parse_amount(nil), do: 0.0
   defp parse_amount(amount) when is_float(amount), do: amount

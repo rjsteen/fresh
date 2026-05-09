@@ -17,9 +17,9 @@ import type { DbClient } from '@fresh/core/db';
 // Module mocks
 // ---------------------------------------------------------------------------
 
-vi.mock('../App', () => ({ useDb: vi.fn() }));
+vi.mock('../context', () => ({ useDb: vi.fn() }));
 
-import { useDb } from '../App';
+import { useDb } from '../context';
 
 // ---------------------------------------------------------------------------
 // Global fetch stub

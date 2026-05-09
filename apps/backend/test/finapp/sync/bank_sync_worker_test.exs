@@ -35,10 +35,11 @@ defmodule Finapp.Sync.BankSyncWorkerTest do
     })
   end
 
-  # Set a 32-byte AES-256 session key in Redis for the given user
+  # Set a 32-byte AES-256 session key in Redis for the given user.
+  # Stored as base64 to match what DeviceChannel.join writes.
   defp set_session_key(user_id) do
     key = :crypto.strong_rand_bytes(32)
-    {:ok, "OK"} = Redix.command(:redix, ["SET", "session_key:#{user_id}", key])
+    {:ok, "OK"} = Redix.command(:redix, ["SET", "session_key:#{user_id}", Base.encode64(key)])
     key
   end
 
@@ -82,8 +83,10 @@ defmodule Finapp.Sync.BankSyncWorkerTest do
       assert_receive {:sync_complete, payload}, 1000
       assert payload.account_token_ref == job.account_token_ref
       assert payload.transaction_count == 1
-      assert is_map(payload.encrypted_transactions)
-      assert Map.has_key?(payload.encrypted_transactions, :ciphertext)
+      # Wire format: base64( iv[12] ++ ciphertext ++ tag[16] ) — matches decryptBatch in @fresh/core
+      assert is_binary(payload.encrypted_batch)
+      assert {:ok, blob} = Base.decode64(payload.encrypted_batch)
+      assert byte_size(blob) > 12
     end
 
     test "updates last_cursor and last_synced_at on success", %{conn: _conn} do
@@ -110,6 +113,36 @@ defmodule Finapp.Sync.BankSyncWorkerTest do
       updated = Repo.get(SyncJob, job.id)
       assert updated.last_cursor == "2026-04-15"
       assert updated.last_synced_at != nil
+    end
+  end
+
+  describe "SimpleFIN adapter — device offline (no session key)" do
+    test "snoozes for 300 seconds when device has no session key in Redis", %{conn: _conn} do
+      user = create_user("offline@example.com")
+      job = insert_simplefin_job(user)
+      # Explicitly ensure no session key exists for this user
+      Redix.command(:redix, ["DEL", "session_key:#{user.id}"])
+
+      simplefin_stub(fn conn ->
+        json_resp(conn, %{
+          "accounts" => [
+            %{
+              "id" => "acct_1",
+              "currency" => "USD",
+              "transactions" => [
+                %{"id" => "tx_1", "amount" => "-10.00", "posted" => "2026-04-20", "pending" => false}
+              ]
+            }
+          ]
+        })
+      end)
+
+      assert {:snooze, 300} = perform(job.id)
+
+      # Cursor must NOT be updated — we haven't delivered the data yet
+      updated = Repo.get(SyncJob, job.id)
+      assert updated.last_cursor == nil
+      assert updated.last_synced_at == nil
     end
   end
 

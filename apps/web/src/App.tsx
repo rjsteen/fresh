@@ -1,15 +1,18 @@
-import { useEffect, useState, createContext, useContext } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, NavLink } from 'react-router-dom';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import { ThemeProvider } from 'styled-components';
 import styled from 'styled-components';
 import { DbClient } from '@fresh/core/db';
+import { FinanceSocket, type SyncCompletePayload } from '@fresh/core/channels';
+import { processSyncBatch } from '@fresh/core/sync';
 import { theme } from './theme';
 import GlobalStyle from './GlobalStyle';
 import { initDb } from './store/db';
 import { apiFetch } from './utils/api';
 import { AuthProvider, useAuth } from './hooks/useAuth';
 import { getStoredCloudAdapter } from './cloud/oauth';
+import { DbContext, SocketRefContext, DeviceKeyContext } from './context';
 import { Dashboard } from './pages/Dashboard';
 import { Accounts } from './pages/Accounts';
 import { Transactions } from './pages/Transactions';
@@ -21,17 +24,9 @@ import { Signup } from './pages/Signup';
 import { Register } from './pages/Register';
 import { Landing } from './pages/Landing';
 
-// ---------------------------------------------------------------------------
-// DB context — available to all authenticated pages
-// ---------------------------------------------------------------------------
-
-const DbContext = createContext<DbClient | null>(null);
-
-export const useDb = () => {
-  const ctx = useContext(DbContext);
-  if (!ctx) throw new Error('useDb must be used within DbContext');
-  return ctx;
-};
+// Use window.location so the WebSocket goes through Vite's proxy in dev
+// and through the reverse proxy in production — never directly to Phoenix.
+const WS_URL = `${window.location.origin.replace(/^http/, 'ws')}/socket`;
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 30_000, retry: 1 } },
@@ -162,7 +157,53 @@ function useModelVersionCheck() {
 function AuthenticatedShell({ db }: { db: DbClient }) {
   useModelVersionCheck();
 
+  const { token } = useAuth();
+  const qc = useQueryClient();
+  const socketRef = useRef<FinanceSocket | null>(null);
+  const [deviceKey, setDeviceKey] = useState<CryptoKey | null>(null);
+  // Stable ref so the sync:complete closure always calls the latest ackSync
+  const ackSyncRef = useRef<(ref: string) => void>((ref) => socketRef.current?.ackSync(ref));
+
+  useEffect(() => {
+    if (!token) return;
+
+    const socket = new FinanceSocket({
+      url: WS_URL,
+      deviceToken: token,
+      onDeviceKey: (key) => setDeviceKey(key),
+      onError: (err) => console.error('[Socket]', err.message),
+    });
+
+    socket.connect();
+    socketRef.current = socket;
+
+    const unsub = socket.on<SyncCompletePayload>('sync:complete', (payload) => {
+      console.log('[Sync] sync:complete received', { txCount: payload.transaction_count, hasKey: !!socket.deviceKey });
+      const key = socket.deviceKey;
+      if (!key) {
+        console.warn('[Sync] no device key — dropping sync:complete');
+        return;
+      }
+      processSyncBatch(payload, { db: db.raw, deviceKey: key, ackSync: ackSyncRef.current })
+        .catch((err) => console.error('[Sync] batch failed:', err))
+        .finally(() => {
+          qc.invalidateQueries({ queryKey: ['accounts'] });
+          qc.invalidateQueries({ queryKey: ['transactions'] });
+        });
+      qc.invalidateQueries({ queryKey: ['sync-jobs'] });
+    });
+
+    return () => {
+      unsub();
+      socket.disconnect();
+      socketRef.current = null;
+      setDeviceKey(null);
+    };
+  }, [token, db, qc]);
+
   return (
+    <SocketRefContext.Provider value={socketRef}>
+      <DeviceKeyContext.Provider value={deviceKey}>
     <DbContext.Provider value={db}>
       <AppShell>
         <Sidebar>
@@ -193,6 +234,8 @@ function AuthenticatedShell({ db }: { db: DbClient }) {
         </Content>
       </AppShell>
     </DbContext.Provider>
+      </DeviceKeyContext.Provider>
+    </SocketRefContext.Provider>
   );
 }
 

@@ -2,7 +2,7 @@ import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import styled from 'styled-components';
 import { format, parseISO } from 'date-fns';
-import { useDb } from '../App';
+import { useDb } from '../context';
 import { getAccounts, categorizeTransaction } from '@fresh/core/db';
 import type { Account, Transaction, Category, SqliteDriver } from '@fresh/core/db';
 
