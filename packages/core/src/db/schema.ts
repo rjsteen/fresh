@@ -5,7 +5,7 @@
  * The backend never receives, stores, or processes any of these values.
  */
 
-export const SCHEMA_VERSION = 8;
+export const SCHEMA_VERSION = 9;
 
 export const CREATE_TABLES_SQL = `
 -- Schema version tracking
@@ -460,6 +460,14 @@ export const MIGRATIONS: Record<number, string> = {
     ALTER TABLE accounts ADD COLUMN external_id TEXT;
     CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_external_id
       ON accounts(external_id) WHERE external_id IS NOT NULL;
+  `,
+  9: `
+    UPDATE transactions
+      SET date = date(CAST(date AS INTEGER), 'unixepoch')
+      WHERE date GLOB '[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]*';
+    UPDATE transactions
+      SET posted_at = replace(datetime(CAST(posted_at AS INTEGER), 'unixepoch'), ' ', 'T') || 'Z'
+      WHERE posted_at GLOB '[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]*';
   `,
 };
 

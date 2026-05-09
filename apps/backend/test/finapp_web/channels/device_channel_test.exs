@@ -50,13 +50,30 @@ defmodule FinappWeb.DeviceChannelTest do
   end
 
   describe "join device:me" do
-    test "returns connected status", %{} do
+    test "returns connected status and a base64 session key", %{} do
       user = create_user("join@example.com")
       {:ok, socket} = connect_socket(user)
 
       assert {:ok, reply, _socket} = subscribe_and_join(socket, FinappWeb.DeviceChannel, "device:me")
       Process.sleep(50)
-      assert reply == %{status: "connected"}
+      assert reply.status == "connected"
+      assert is_binary(reply.session_key)
+      assert {:ok, _} = Base.decode64(reply.session_key)
+    end
+
+    test "stores session key in Redis so BankSyncWorker can encrypt payloads" do
+      user = create_user("join-redis@example.com")
+      {:ok, socket} = connect_socket(user)
+
+      {:ok, reply, _socket} = subscribe_and_join(socket, FinappWeb.DeviceChannel, "device:me")
+      Process.sleep(50)
+
+      {:ok, stored_b64} = Redix.command(:redix, ["GET", "session_key:#{user.id}"])
+      assert is_binary(stored_b64)
+      # Stored as base64; decode to get raw key bytes matching what the client received
+      assert {:ok, raw_key} = Base.decode64(stored_b64)
+      assert byte_size(raw_key) == 32
+      assert stored_b64 == reply.session_key
     end
 
     test "relays PubSub messages to the client after join" do

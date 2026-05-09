@@ -1,17 +1,11 @@
-import { useState, useMemo, useRef } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import styled from 'styled-components';
 import { format } from 'date-fns';
-import { useDb } from '../App';
+import { useDb } from '../context';
 import { getAccounts } from '@fresh/core/db';
 import type { Account } from '@fresh/core/db';
-import { useFinanceSocket } from '@fresh/core/channels';
-import { processSyncBatch } from '@fresh/core/sync';
-import { useAuth } from '../hooks/useAuth';
 import { apiFetch, API } from '../utils/api';
-import { getOrCreateDbKey } from '../db/driver';
-
-const WS_URL = API.replace(/^http/, 'ws') + '/socket';
 
 // ---------------------------------------------------------------------------
 // Styled components
@@ -355,7 +349,6 @@ function normalizeSyncStatus(jobStatus: string): SyncStatus {
 
 export function Accounts() {
   const db = useDb();
-  const { token } = useAuth();
   const qc = useQueryClient();
 
   const [panel, setPanel] = useState<Panel>(null);
@@ -365,8 +358,8 @@ export function Accounts() {
   const [success, setSuccess] = useState<string | null>(null);
   const [syncStatusOverride, setSyncStatusOverride] = useState<Record<string, SyncStatus>>({});
 
-  // Accounts from on-device SQLite
-  const { data: accounts = [], refetch: refetchAccounts } = useQuery<Account[]>({
+  // Accounts from on-device SQLite — invalidated by AuthenticatedShell on sync:complete
+  const { data: accounts = [] } = useQuery<Account[]>({
     queryKey: ['accounts'],
     queryFn: () => getAccounts(db.raw),
   });
@@ -382,42 +375,19 @@ export function Accounts() {
     },
   });
 
+  // Clear 'syncing' overrides once accounts data refreshes after a sync:complete.
+  // Use functional update so we only schedule a re-render when there is something to clear.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional: syncing badge clears when accounts re-fetches
+    setSyncStatusOverride((prev) => (Object.keys(prev).length === 0 ? prev : {}));
+  }, [accounts]);
+
   // O(1) lookup: sync_token_ref → SyncJob
   const syncJobsByRef = useMemo(
     () => new Map(syncJobs.map((j) => [j.account_token_ref, j])),
     [syncJobs],
   );
 
-  // Stable ref so the onSyncComplete closure can access ackSync without a
-  // circular dependency on the useFinanceSocket return value.
-  const ackSyncRef = useRef<(ref: string) => void>(() => {});
-
-  // Real-time sync status from Phoenix channel
-  const { ackSync } = useFinanceSocket({
-    url: WS_URL,
-    deviceToken: token,
-    onSyncComplete: (payload) => {
-      setSyncStatusOverride((prev) => ({ ...prev, [payload.account_token_ref]: 'idle' }));
-      getOrCreateDbKey()
-        .then((key) =>
-          processSyncBatch(payload, {
-            db: db.raw,
-            deviceKey: key,
-            ackSync: ackSyncRef.current,
-          })
-        )
-        .catch((err) => console.error('[Accounts] sync batch failed:', err));
-      refetchAccounts();
-      qc.invalidateQueries({ queryKey: ['sync-jobs'] });
-    },
-    onSyncError: ({ account_token_ref }) => {
-      setSyncStatusOverride((prev) => ({ ...prev, [account_token_ref]: 'error' }));
-    },
-  });
-
-  // Keep ref current with the stable ackSync callback
-  // eslint-disable-next-line react-hooks/refs -- stable ref pattern: keeps ackSync current without re-subscribing
-  ackSyncRef.current = ackSync;
 
   function getStatusForAccount(account: Account): SyncStatus {
     if (account.sync_token_ref) {
@@ -431,7 +401,7 @@ export function Accounts() {
 
   const triggerSyncMutation = useMutation({
     mutationFn: async (jobId: string) => {
-      const res = await apiFetch(`${API}/api/v1/sync/${jobId}/trigger`, { method: 'POST' });
+      const res = await apiFetch(`${API}/api/v1/sync/jobs/${jobId}/trigger`, { method: 'POST' });
       if (!res.ok) throw new Error('Failed to trigger sync');
     },
     onMutate: (jobId) => {
@@ -458,7 +428,7 @@ export function Accounts() {
       await db.raw.execute('DELETE FROM accounts WHERE id = ?', [accountId]);
     },
     onSuccess: () => {
-      refetchAccounts();
+      qc.invalidateQueries({ queryKey: ['accounts'] });
       qc.invalidateQueries({ queryKey: ['sync-jobs'] });
     },
     onError: (e: Error) => setError(e.message),
@@ -483,7 +453,7 @@ export function Accounts() {
       setPanel(null);
       setSetupToken('');
       qc.invalidateQueries({ queryKey: ['sync-jobs'] });
-      refetchAccounts();
+      qc.invalidateQueries({ queryKey: ['accounts'] });
     },
     onError: (e: Error) => setError(e.message),
   });

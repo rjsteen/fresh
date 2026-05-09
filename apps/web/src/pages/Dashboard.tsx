@@ -1,9 +1,9 @@
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import styled from 'styled-components';
-import { format, parse, startOfMonth } from 'date-fns';
+import { format, parseISO, startOfMonth } from 'date-fns';
 import { API, authHeaders } from '../utils/api';
-import { useDb } from '../App';
+import { useDb } from '../context';
 import { getAccounts } from '@fresh/core/db';
 import type { Account } from '@fresh/core/db';
 
@@ -284,7 +284,7 @@ export function Dashboard() {
               <tbody>
                 {recentTxns.map((tx) => (
                   <tr key={tx.id}>
-                    <td>{format(parse(tx.date, 'yyyy-MM-dd', new Date()), 'MMM d')}</td>
+                    <td>{format(parseISO(tx.date), 'MMM d')}</td>
                     <td>{tx.merchant_name ?? tx.description}</td>
                     <td style={{ color: tx.category_name ? undefined : '#7da98a' }}>
                       {tx.category_name ?? '—'}

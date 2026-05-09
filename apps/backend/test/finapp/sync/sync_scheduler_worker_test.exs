@@ -40,13 +40,23 @@ defmodule Finapp.Sync.SyncSchedulerWorkerTest do
     assert_enqueued(worker: BankSyncWorker, args: %{"sync_job_id" => job2.id})
   end
 
-  test "skips jobs that have already synced" do
+  test "skips recently synced jobs" do
     user = create_user("scheduler2@example.com")
     synced = insert_job(user, %{last_synced_at: DateTime.utc_now() |> DateTime.truncate(:second)})
 
     assert :ok = perform_job(SyncSchedulerWorker, %{})
 
     refute_enqueued(worker: BankSyncWorker, args: %{"sync_job_id" => synced.id})
+  end
+
+  test "re-enqueues stale jobs whose last sync is more than 4 hours ago" do
+    user = create_user("scheduler-stale@example.com")
+    stale_time = DateTime.add(DateTime.utc_now(), -(4 * 3600 + 60)) |> DateTime.truncate(:second)
+    stale = insert_job(user, %{last_synced_at: stale_time})
+
+    assert :ok = perform_job(SyncSchedulerWorker, %{})
+
+    assert_enqueued(worker: BankSyncWorker, args: %{"sync_job_id" => stale.id})
   end
 
   test "skips expired and paused jobs" do

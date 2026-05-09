@@ -153,27 +153,67 @@ defmodule Finapp.Sync.SimpleFinTest do
       assert {:ok, %{transactions: [], next_cursor: nil}} = SimpleFin.fetch_transactions(job)
     end
 
-    test "passes cursor as start_date query param" do
+    test "passes cursor as start-date query param" do
       job = make_job(@access_url, "2026-03-01")
 
       stub(fn conn ->
         params = URI.decode_query(conn.query_string)
-        assert params["start_date"] == "2026-03-01"
+        assert params["start-date"] == "2026-03-01"
         json_resp(conn, %{"accounts" => []})
       end)
 
       assert {:ok, _} = SimpleFin.fetch_transactions(job)
     end
 
-    test "omits start_date when cursor is nil" do
+    test "sends a start-date 90 days in the past when cursor is nil" do
       job = make_job(@access_url, nil)
 
       stub(fn conn ->
-        assert conn.query_string == ""
+        params = URI.decode_query(conn.query_string)
+        start_date = String.to_integer(params["start-date"])
+        expected = System.system_time(:second) - 90 * 24 * 60 * 60
+        # Allow a few seconds of clock skew between test setup and assertion
+        assert_in_delta start_date, expected, 5
         json_resp(conn, %{"accounts" => []})
       end)
 
       assert {:ok, _} = SimpleFin.fetch_transactions(job)
+    end
+
+    test "converts unix timestamp dates to ISO strings" do
+      job = make_job()
+      # 2024-01-15 00:00:00 UTC
+      posted_unix = 1_705_276_800
+      # 2024-01-14 00:00:00 UTC
+      transacted_unix = 1_705_190_400
+
+      stub(fn conn ->
+        json_resp(conn, %{
+          "accounts" => [
+            %{
+              "id" => "acct_123",
+              "currency" => "USD",
+              "transactions" => [
+                %{
+                  "id" => "tx_unix",
+                  "amount" => "-10.00",
+                  "description" => "Unix date tx",
+                  "posted" => posted_unix,
+                  "transacted_at" => transacted_unix,
+                  "pending" => false
+                }
+              ]
+            }
+          ]
+        })
+      end)
+
+      assert {:ok, %{transactions: [tx], next_cursor: cursor}} =
+               SimpleFin.fetch_transactions(job)
+
+      assert tx.date == "2024-01-14"
+      assert tx.posted_at == "2024-01-15T00:00:00Z"
+      assert cursor == Integer.to_string(posted_unix)
     end
 
     test "returns :connection_expired on 401" do

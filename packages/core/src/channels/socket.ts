@@ -43,6 +43,7 @@ export interface SocketOptions {
   url: string;               // e.g. wss://api.fresh.app/socket
   deviceToken: string;       // JWT issued at device registration
   onError?: (error: Error) => void;
+  onDeviceKey?: (key: CryptoKey) => void;  // Called once per join with the session decryption key
   logger?: (kind: string, msg: string, data: unknown) => void;
 }
 
@@ -50,6 +51,11 @@ export class FinanceSocket {
   private socket: Socket;
   private deviceChannel: Channel | null = null;
   private readonly handlers = new Map<SignalEvent, Set<(payload: unknown) => void>>();
+  private _deviceKey: CryptoKey | null = null;
+
+  get deviceKey(): CryptoKey | null {
+    return this._deviceKey;
+  }
 
   constructor(private readonly opts: SocketOptions) {
     this.socket = new Socket(opts.url, {
@@ -121,7 +127,18 @@ export class FinanceSocket {
 
     this.deviceChannel
       .join()
-      .receive('ok', () => console.log('[Socket] Joined device channel'))
+      .receive('ok', (resp: { status: string; session_key?: string }) => {
+        console.log('[Socket] Joined device channel');
+        if (resp.session_key) {
+          const keyBytes = Uint8Array.from(atob(resp.session_key), c => c.charCodeAt(0));
+          crypto.subtle.importKey('raw', keyBytes, { name: 'AES-GCM', length: 256 }, false, ['decrypt'])
+            .then(key => {
+              this._deviceKey = key;
+              this.opts.onDeviceKey?.(key);
+            })
+            .catch(err => this.opts.onError?.(new Error(`Failed to import session key: ${err}`)));
+        }
+      })
       .receive('error', (err: unknown) =>
         this.opts.onError?.(new Error(`Channel join failed: ${JSON.stringify(err)}`))
       )
