@@ -50,6 +50,9 @@ defmodule FinappWeb.Router do
 
     # Model distribution — devices pull new weights after model:updated signal
     get "/models/current", ModelController, :current_versions
+
+    # ML training data — devices submit anonymized feature vectors for model training
+    post "/ml/training-data", TrainingController, :submit
   end
 
   # Internal endpoints — sidecar only, validated by X-Internal-Token header
