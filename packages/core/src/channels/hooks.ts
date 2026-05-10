@@ -13,11 +13,13 @@ export interface UseFinanceSocketOptions {
   onModelUpdated?: (payload: ModelUpdatedPayload) => void;
   onSyncError?: (payload: { account_token_ref: string; reason: string }) => void;
   onAccountDeleted?: () => void;
+  onDeviceKey?: (key: CryptoKey) => void;
 }
 
 export function useFinanceSocket(opts: UseFinanceSocketOptions) {
   const socketRef = useRef<FinanceSocket | null>(null);
   const [isConnected, setIsConnected] = useState(false);
+  const [deviceKey, setDeviceKey] = useState<CryptoKey | null>(null);
 
   const stableOpts = useRef(opts);
   // eslint-disable-next-line react-hooks/refs -- stable ref pattern: keeps opts current without re-subscribing
@@ -32,6 +34,10 @@ export function useFinanceSocket(opts: UseFinanceSocketOptions) {
       onError: (err) => {
         console.error('[Socket]', err.message);
         setIsConnected(false);
+      },
+      onDeviceKey: (key) => {
+        setDeviceKey(key);
+        stableOpts.current.onDeviceKey?.(key);
       },
     });
 
@@ -60,6 +66,7 @@ export function useFinanceSocket(opts: UseFinanceSocketOptions) {
       socket.disconnect();
       socketRef.current = null;
       setIsConnected(false);
+      setDeviceKey(null);
     };
   }, [opts.deviceToken, opts.url]);
 
@@ -75,7 +82,7 @@ export function useFinanceSocket(opts: UseFinanceSocketOptions) {
     socketRef.current?.deregisterAlertToken(ruleTokenRef);
   }, []);
 
-  return { isConnected, ackSync, registerAlertToken, deregisterAlertToken };
+  return { isConnected, deviceKey, ackSync, registerAlertToken, deregisterAlertToken };
 }
 
 /** Minimal hook for a single event subscription */

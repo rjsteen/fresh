@@ -48,6 +48,15 @@ defmodule Finapp.Sync.BankSyncWorker do
 
       :ok
     else
+      {:error, :no_session_key} ->
+        # Device is not connected — no session key in Redis yet.
+        # Snooze and retry; the key will be available once the device reconnects.
+        Logger.info("[BankSync] device offline, snoozing 300s",
+          sync_job_id: sync_job_id,
+          user_id: sync_job.user_id
+        )
+        {:snooze, 300}
+
       {:error, :rate_limited} ->
         Logger.warning("[BankSync] rate limited, snoozing 60s",
           sync_job_id: sync_job_id,
@@ -78,46 +87,54 @@ defmodule Finapp.Sync.BankSyncWorker do
   defp get_adapter(%{connection_type: type}), do: {:error, "Unknown connection type: #{type}"}
 
   defp broadcast_to_device(sync_job, result) do
-    payload = %{
-      account_token_ref: sync_job.account_token_ref,
-      transaction_count: length(result.transactions),
-      cursor: result.next_cursor,
-      # Transactions and accounts are encrypted with the device's session key.
-      # The Phoenix process handles this encryption; Postgres never touches this data.
-      encrypted_transactions: encrypt_for_device(sync_job.user_id, result.transactions),
-      encrypted_accounts: encrypt_for_device(sync_job.user_id, result.accounts)
-    }
+    with {:ok, enc_txns} <- encrypt_for_device(sync_job.user_id, result.transactions),
+         {:ok, enc_accounts} <- encrypt_for_device(sync_job.user_id, result.accounts) do
+      payload = %{
+        account_token_ref: sync_job.account_token_ref,
+        transaction_count: length(result.transactions),
+        cursor: result.next_cursor,
+        # Wire format matches the frontend's decryptBatch expectation:
+        # base64( iv[12] ++ ciphertext ++ tag[16] )
+        encrypted_batch: enc_txns,
+        encrypted_accounts: enc_accounts
+      }
 
-    Phoenix.PubSub.broadcast(
-      Finapp.PubSub,
-      "user:#{sync_job.user_id}",
-      {:sync_complete, payload}
-    )
+      Phoenix.PubSub.broadcast(
+        Finapp.PubSub,
+        "user:#{sync_job.user_id}",
+        {:sync_complete, payload}
+      )
 
-    :ok
+      :ok
+    end
   end
 
-  defp encrypt_for_device(user_id, transactions) do
+  defp encrypt_for_device(user_id, data) do
     # In production, use a per-session ECDH-derived key from the device's public key.
     # For the prototype, we use a symmetric key stored in the user's session.
     # The device decrypts this client-side; the backend discards the plaintext.
-    key = get_device_session_key(user_id)
-    plaintext = Jason.encode!(transactions)
-    iv = :crypto.strong_rand_bytes(12)
-    {ciphertext, tag} = :crypto.crypto_one_time_aead(:aes_256_gcm, key, iv, plaintext, "", true)
-    %{
-      ciphertext: Base.encode64(ciphertext),
-      tag: Base.encode64(tag),
-      iv: Base.encode64(iv)
-    }
+    #
+    # Wire format: base64( iv[12 bytes] ++ ciphertext ++ tag[16 bytes] )
+    # Matches the Web Crypto AES-GCM layout expected by decryptBatch in @fresh/core/sync.
+    with {:ok, key} <- get_device_session_key(user_id) do
+      plaintext = Jason.encode!(data)
+      iv = :crypto.strong_rand_bytes(12)
+      {ciphertext, tag} = :crypto.crypto_one_time_aead(:aes_256_gcm, key, iv, plaintext, "", true)
+      {:ok, Base.encode64(iv <> ciphertext <> tag)}
+    end
   end
 
   defp get_device_session_key(user_id) do
     # Retrieve the ephemeral session key from Redis (set at WebSocket connect time).
+    # Stored as base64 to avoid raw-binary issues in Redis; decode before use.
     # Key expires with the session — no long-term storage of device keys.
     case Redix.command(:redix, ["GET", "session_key:#{user_id}"]) do
-      {:ok, key} when is_binary(key) -> key
-      _ -> raise "No session key for user #{user_id}"
+      {:ok, encoded} when is_binary(encoded) ->
+        case Base.decode64(encoded) do
+          {:ok, key} -> {:ok, key}
+          :error -> {:error, :no_session_key}
+        end
+      _ -> {:error, :no_session_key}
     end
   end
 

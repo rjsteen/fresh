@@ -14,7 +14,7 @@ import type { DbClient } from '@fresh/core/db';
 // Mock only the React context hook — real DbClient is injected per-test
 // ---------------------------------------------------------------------------
 
-vi.mock('../App', () => ({ useDb: vi.fn() }));
+vi.mock('../context', () => ({ useDb: vi.fn() }));
 
 // Stub fetch so the sync-jobs API call never fires network requests in tests
 beforeAll(() => {
@@ -28,7 +28,7 @@ afterAll(() => {
   vi.unstubAllGlobals();
 });
 
-import { useDb } from '../App';
+import { useDb } from '../context';
 
 // ---------------------------------------------------------------------------
 // Per-test DB setup

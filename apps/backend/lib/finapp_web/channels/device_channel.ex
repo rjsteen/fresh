@@ -9,6 +9,7 @@ defmodule FinappWeb.DeviceChannel do
   """
 
   use Phoenix.Channel
+  require Logger
   alias Finapp.Accounts
   alias Finapp.Accounts.Device
   alias Finapp.Repo
@@ -17,13 +18,23 @@ defmodule FinappWeb.DeviceChannel do
   def join("device:me", _params, socket) do
     user_id = socket.assigns.current_user_id
 
+    Logger.info("[DeviceChannel] join user_id=#{user_id}")
+
     # Subscribe to this user's PubSub topic so Oban workers can broadcast to us
     Phoenix.PubSub.subscribe(Finapp.PubSub, "user:#{user_id}")
 
     # Touch the device's last_seen_at
     touch_device(socket)
 
-    {:ok, %{status: "connected"}, socket}
+    # Generate an ephemeral AES-256 session key for this connection.
+    # Stored in Redis so BankSyncWorker can encrypt payloads destined for this device.
+    # The device receives the base64-encoded key here and uses it to decrypt sync payloads.
+    # The key expires when the TTL lapses; the device obtains a fresh one on reconnect.
+    session_key = :crypto.strong_rand_bytes(32)
+    redix_result = Redix.command(:redix, ["SET", "session_key:#{user_id}", Base.encode64(session_key), "EX", 86_400])
+    Logger.info("[DeviceChannel] session key write result: #{inspect(redix_result)}")
+
+    {:ok, %{status: "connected", session_key: Base.encode64(session_key)}, socket}
   end
 
   # Client acknowledges a completed sync pull

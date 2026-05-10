@@ -15,7 +15,7 @@ import type { DbClient } from '@fresh/core/db';
 // Mock only the React context hook — the real DbClient is injected per-test
 // ---------------------------------------------------------------------------
 
-vi.mock('../App', () => ({ useDb: vi.fn() }));
+vi.mock('../context', () => ({ useDb: vi.fn() }));
 
 // Recharts uses ResizeObserver which jsdom doesn't provide
 global.ResizeObserver = class {
@@ -24,7 +24,7 @@ global.ResizeObserver = class {
   disconnect() {}
 };
 
-import { useDb } from '../App';
+import { useDb } from '../context';
 
 // ---------------------------------------------------------------------------
 // Per-test DB setup
@@ -161,7 +161,13 @@ describe('Budget page', () => {
   // -------------------------------------------------------------------------
   describe('budget lines', () => {
     it('renders line name, spent/limit, and percentage', async () => {
-      const budgetId = await seedBudget();
+      // Use a custom period covering a fixed date range so this test is not
+      // sensitive to the current month.
+      const budgetId = await seedBudget({ period_type: 'custom' });
+      await client.raw.execute(
+        `UPDATE budgets SET end_date = '2026-04-30' WHERE id = ?`,
+        [budgetId]
+      );
       await seedLine(budgetId, { name: 'Dining', limit_amount: 200 });
       // Seed a debit transaction linked to this line's category
       await seedTransaction('acc-1', 'cat-dining', -60, '2026-04-05');
@@ -322,6 +328,14 @@ describe('Budget page', () => {
         );
         expect(lines).toHaveLength(1);
         expect((lines[0] as { limit_amount: number }).limit_amount).toBe(300);
+
+        // Category must be created so transactions can be tagged to it
+        const cats = await client.raw.query<{ id: string; name: string }>(
+          'SELECT id, name FROM categories WHERE name = ?',
+          ['Food']
+        );
+        expect(cats).toHaveLength(1);
+        expect((lines[0] as { category_id: string }).category_id).toBe(cats[0].id);
       });
     });
 

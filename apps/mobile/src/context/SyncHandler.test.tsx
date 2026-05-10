@@ -82,9 +82,9 @@ async function makeAesKey(): Promise<CryptoKey> {
   return crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt']);
 }
 
-async function encryptBatch(txs: unknown[], key: CryptoKey): Promise<string> {
+async function encryptJson(data: unknown, key: CryptoKey): Promise<string> {
   const iv = crypto.getRandomValues(new Uint8Array(12));
-  const plaintext = new TextEncoder().encode(JSON.stringify(txs));
+  const plaintext = new TextEncoder().encode(JSON.stringify(data));
   const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, plaintext);
   const out = new Uint8Array(12 + ciphertext.byteLength);
   out.set(iv, 0);
@@ -92,12 +92,27 @@ async function encryptBatch(txs: unknown[], key: CryptoKey): Promise<string> {
   return btoa(String.fromCharCode(...out));
 }
 
+const encryptBatch = (txs: unknown[], key: CryptoKey) => encryptJson(txs, key);
+
+function makeAccount() {
+  return {
+    external_id: ACCOUNT_EXTERNAL_ID,
+    name: 'Sync Test Bank',
+    institution: 'Test',
+    type: 'checking',
+    currency: 'USD',
+    balance: 0,
+    available_balance: null,
+  };
+}
+
 const ACCOUNT_ID = 'acc-sync-test';
+const ACCOUNT_EXTERNAL_ID = 'ext-acct-1';
 
 function makeTx(overrides: Record<string, unknown> = {}) {
   return {
     id: 'tx-1',
-    account_id: ACCOUNT_ID,
+    account_external_id: ACCOUNT_EXTERNAL_ID,
     external_id: 'ext-1',
     amount: -12.5,
     currency: 'USD',
@@ -135,9 +150,9 @@ describe('SyncHandler', () => {
     deviceKey = await makeAesKey();
 
     await driver.execute(
-      `INSERT INTO accounts (id, name, institution, type, currency, current_balance, connection_type, is_active)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [ACCOUNT_ID, 'Sync Test Bank', 'Test', 'checking', 'USD', 0, 'manual', 1],
+      `INSERT INTO accounts (id, name, institution, type, currency, current_balance, connection_type, is_active, external_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [ACCOUNT_ID, 'Sync Test Bank', 'Test', 'checking', 'USD', 0, 'manual', 1, ACCOUNT_EXTERNAL_ID],
     );
 
     mockAckSync = vi.fn();
@@ -147,6 +162,7 @@ describe('SyncHandler', () => {
       return {
         ackSync: mockAckSync as unknown as (accountTokenRef: string) => void,
         isConnected: false,
+        deviceKey: null,
         registerAlertToken: vi.fn() as unknown as (ruleTokenRef: string) => void,
         deregisterAlertToken: vi.fn() as unknown as (ruleTokenRef: string) => void,
       };
@@ -189,18 +205,18 @@ describe('SyncHandler', () => {
   it('passes the device key and db to processSyncBatch (asserts on DB state)', async () => {
     render(<SyncHandler db={client} />);
 
-    const encrypted = await encryptBatch([makeTx()], deviceKey);
     capturedOnSyncComplete!({
       account_token_ref: 'ref-2',
       transaction_count: 1,
       cursor: '',
-      encrypted_batch: encrypted,
+      encrypted_accounts: await encryptJson([makeAccount()], deviceKey),
+      encrypted_batch: await encryptBatch([makeTx()], deviceKey),
     });
 
     await waitFor(async () => {
-      const rows = await driver.query<{ id: string }>('SELECT id FROM transactions');
+      const rows = await driver.query<{ external_id: string }>('SELECT external_id FROM transactions');
       expect(rows).toHaveLength(1);
-      expect(rows[0].id).toBe('tx-1');
+      expect(rows[0].external_id).toBe('ext-1');
     });
   });
 
@@ -237,6 +253,7 @@ describe('SyncHandler', () => {
       return {
         ackSync: ackFn as unknown as (accountTokenRef: string) => void,
         isConnected: false,
+        deviceKey: null,
         registerAlertToken: vi.fn() as unknown as (ruleTokenRef: string) => void,
         deregisterAlertToken: vi.fn() as unknown as (ruleTokenRef: string) => void,
       };

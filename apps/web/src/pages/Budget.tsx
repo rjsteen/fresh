@@ -19,7 +19,7 @@ import {
   ResponsiveContainer,
   Legend,
 } from 'recharts';
-import { useDb } from '../App';
+import { useDb } from '../context';
 import { getBudgetSummary } from '@fresh/core/db';
 import type { Budget, BudgetLine, BudgetSummary, PeriodType } from '@fresh/core/db';
 
@@ -731,13 +731,27 @@ export function Budget() {
       }
 
       for (const line of validLines) {
+        const lineName = line.name.trim();
+        const existing = await db.raw.query<{ id: string }>(
+          'SELECT id FROM categories WHERE name = ? LIMIT 1',
+          [lineName]
+        );
+        const categoryId = existing[0]?.id ?? crypto.randomUUID();
+        if (!existing[0]) {
+          await db.raw.execute(
+            `INSERT INTO categories (id, name, is_system, created_at) VALUES (?, ?, 0, datetime('now'))`,
+            [categoryId, lineName]
+          );
+        }
+
         await db.raw.execute(
           `INSERT INTO budget_lines (id, budget_id, category_id, name, limit_amount, rollover, created_at, updated_at)
-           VALUES (?, ?, NULL, ?, ?, ?, datetime('now'), datetime('now'))`,
+           VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`,
           [
             crypto.randomUUID(),
             budgetId,
-            line.name.trim(),
+            categoryId,
+            lineName,
             Number(line.limit_amount),
             line.rollover ? 1 : 0,
           ]
@@ -756,6 +770,7 @@ export function Budget() {
       qc.invalidateQueries({ queryKey: ['budgets'] });
       qc.invalidateQueries({ queryKey: ['budget-lines'] });
       qc.invalidateQueries({ queryKey: ['budget-summary'] });
+      qc.invalidateQueries({ queryKey: ['categories'] });
     },
     onError: (e: Error) => setError(e.message),
   });
