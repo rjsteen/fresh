@@ -178,15 +178,6 @@ defmodule FinappWeb.DeviceChannelTest do
       assert_push "sync:error", ^payload, 500
     end
 
-    test "pushes model:updated to the client", %{user: user} do
-      payload = %{model_type: "categorizer", version: "2.0.0",
-                  cdn_path: "models/cat/2.0.0/model.onnx", checksum_sha256: "abc123"}
-
-      Phoenix.PubSub.broadcast(Finapp.PubSub, "user:#{user.id}", {:model_updated, payload})
-
-      assert_push "model:updated", ^payload, 500
-    end
-
     test "pushes account:deleted to the client", %{user: user} do
       Phoenix.PubSub.broadcast(Finapp.PubSub, "user:#{user.id}", {:account_deleted, %{}})
 

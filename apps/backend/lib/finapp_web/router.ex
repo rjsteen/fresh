@@ -13,10 +13,6 @@ defmodule FinappWeb.Router do
     plug FinappWeb.Plugs.AuthPipeline
   end
 
-  pipeline :sidecar_auth do
-    plug FinappWeb.Plugs.SidecarAuth
-  end
-
   scope "/api/v1", FinappWeb do
     pipe_through :api
 
@@ -47,16 +43,6 @@ defmodule FinappWeb.Router do
     get "/sync/jobs", SyncController, :list_jobs
     post "/sync/jobs/:id/trigger", SyncController, :trigger_now
     put "/sync/jobs/:id/schedule", SyncController, :update_schedule
-
-    # Model distribution — devices pull new weights after model:updated signal
-    get "/models/current", ModelController, :current_versions
-  end
-
-  # Internal endpoints — sidecar only, validated by X-Internal-Token header
-  scope "/internal", FinappWeb do
-    pipe_through [:api, :sidecar_auth]
-
-    post "/models/notify", ModelController, :notify
   end
 
   # Health check — no auth required

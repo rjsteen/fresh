@@ -5,7 +5,7 @@
  * The backend never receives, stores, or processes any of these values.
  */
 
-export const SCHEMA_VERSION = 9;
+export const SCHEMA_VERSION = 10;
 
 export const CREATE_TABLES_SQL = `
 -- Schema version tracking
@@ -469,6 +469,47 @@ export const MIGRATIONS: Record<number, string> = {
       SET posted_at = replace(datetime(CAST(posted_at AS INTEGER), 'unixepoch'), ' ', 'T') || 'Z'
       WHERE posted_at GLOB '[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]*';
   `,
+  10: `
+    DROP TABLE IF EXISTS anomalies;
+
+    CREATE TABLE IF NOT EXISTS categorization_rules (
+      id          TEXT PRIMARY KEY,
+      priority    INTEGER NOT NULL DEFAULT 0,
+      conditions  TEXT NOT NULL,
+      category_id TEXT NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
+      is_auto     INTEGER NOT NULL DEFAULT 0,
+      created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_categorization_rules_priority
+      ON categorization_rules(priority DESC, created_at DESC);
+
+    CREATE TRIGGER IF NOT EXISTS trg_categorization_rules_insert
+    AFTER INSERT ON categorization_rules BEGIN
+      INSERT INTO change_log (table_name, row_id, operation, payload)
+      VALUES ('categorization_rules', NEW.id, 'insert', json_object(
+        'id', NEW.id, 'priority', NEW.priority, 'conditions', NEW.conditions,
+        'category_id', NEW.category_id, 'is_auto', NEW.is_auto,
+        'created_at', NEW.created_at, 'updated_at', NEW.updated_at
+      ));
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS trg_categorization_rules_update
+    AFTER UPDATE ON categorization_rules BEGIN
+      INSERT INTO change_log (table_name, row_id, operation, payload)
+      VALUES ('categorization_rules', NEW.id, 'update', json_object(
+        'id', NEW.id, 'priority', NEW.priority, 'conditions', NEW.conditions,
+        'category_id', NEW.category_id, 'is_auto', NEW.is_auto,
+        'created_at', NEW.created_at, 'updated_at', NEW.updated_at
+      ));
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS trg_categorization_rules_delete
+    AFTER DELETE ON categorization_rules BEGIN
+      INSERT INTO change_log (table_name, row_id, operation, payload)
+      VALUES ('categorization_rules', OLD.id, 'delete', NULL);
+    END;
+  `,
 };
 
 export interface RecurringPattern {
@@ -489,7 +530,6 @@ export type AccountType = 'checking' | 'savings' | 'credit' | 'investment' | 'ca
 export type ConnectionType = 'simplefin' | 'gocardless' | 'manual';
 export type CategorySource = 'ml' | 'rule' | 'user';
 export type PeriodType = 'monthly' | 'weekly' | 'annual' | 'custom';
-export type AnomalyType = 'unusual_amount' | 'new_merchant' | 'frequency' | 'category_shift';
 export type AlertRuleType = 'budget_threshold' | 'large_transaction' | 'merchant' | 'balance_low';
 
 export interface Account {

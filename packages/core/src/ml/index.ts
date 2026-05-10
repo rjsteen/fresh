@@ -1,1 +1,1 @@
-export * from './inference';
+export * from './categorizer';

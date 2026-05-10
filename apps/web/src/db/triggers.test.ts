@@ -295,39 +295,50 @@ describe('recurring_patterns triggers', () => {
 });
 
 // ---------------------------------------------------------------------------
-// anomalies
+// categorization_rules
 // ---------------------------------------------------------------------------
 
-describe('anomalies triggers', () => {
+describe('categorization_rules triggers', () => {
   beforeEach(async () => {
-    await insertAccount('acc-1');
-    await insertTransaction('txn-1');
+    await client.raw.execute(
+      `INSERT INTO categories (id, name, is_system) VALUES ('cat-1', 'Food', 1)`
+    );
   });
+
+  const conditions = JSON.stringify([{ field: 'payee', op: 'equals', value: 'starbucks' }]);
 
   it('logs insert', async () => {
     await client.raw.execute(
-      `INSERT INTO anomalies (id, transaction_id, type, score) VALUES ('an-1', 'txn-1', 'unusual_amount', 0.95)`
+      `INSERT INTO categorization_rules (id, priority, conditions, category_id, is_auto)
+       VALUES ('rule-1', 10, ?, 'cat-1', 0)`,
+      [conditions]
     );
-    const row = await lastLog('anomalies', 'insert');
-    expect(row?.row_id).toBe('an-1');
-    expect(JSON.parse(row!.payload!).score).toBe(0.95);
+    const row = await lastLog('categorization_rules', 'insert');
+    expect(row?.row_id).toBe('rule-1');
+    expect(JSON.parse(row!.payload!).priority).toBe(10);
   });
 
   it('logs update', async () => {
     await client.raw.execute(
-      `INSERT INTO anomalies (id, transaction_id, type, score) VALUES ('an-1', 'txn-1', 'unusual_amount', 0.95)`
+      `INSERT INTO categorization_rules (id, priority, conditions, category_id, is_auto)
+       VALUES ('rule-1', 10, ?, 'cat-1', 0)`,
+      [conditions]
     );
-    await client.raw.execute(`UPDATE anomalies SET acknowledged = 1 WHERE id = 'an-1'`);
-    const row = await lastLog('anomalies', 'update');
-    expect(JSON.parse(row!.payload!).acknowledged).toBe(1);
+    await client.raw.execute(
+      `UPDATE categorization_rules SET priority = 20 WHERE id = 'rule-1'`
+    );
+    const row = await lastLog('categorization_rules', 'update');
+    expect(JSON.parse(row!.payload!).priority).toBe(20);
   });
 
   it('logs delete with null payload', async () => {
     await client.raw.execute(
-      `INSERT INTO anomalies (id, transaction_id, type, score) VALUES ('an-1', 'txn-1', 'unusual_amount', 0.95)`
+      `INSERT INTO categorization_rules (id, priority, conditions, category_id, is_auto)
+       VALUES ('rule-1', 10, ?, 'cat-1', 0)`,
+      [conditions]
     );
-    await client.raw.execute(`DELETE FROM anomalies WHERE id = 'an-1'`);
-    const row = await lastLog('anomalies', 'delete');
+    await client.raw.execute(`DELETE FROM categorization_rules WHERE id = 'rule-1'`);
+    const row = await lastLog('categorization_rules', 'delete');
     expect(row?.payload).toBeNull();
   });
 });

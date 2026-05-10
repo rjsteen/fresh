@@ -3,7 +3,7 @@ export * from './db/client';
 export * from './db/queries';
 export * from './channels/socket';
 export * from './channels/hooks';
-export * from './ml/inference';
+export * from './ml/categorizer';
 export * from './budget/rules';
 export * from './budget/recurring';
 export * from './sync/batch';

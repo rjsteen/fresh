@@ -3,7 +3,7 @@ defmodule FinappWeb.DeviceChannel do
   The sole Phoenix Channel. Handles signal delivery to devices.
 
   Messages sent TO the server: device lifecycle, alert token registration.
-  Messages sent FROM the server: sync signals, alert signals, model update signals.
+  Messages sent FROM the server: sync signals, alert signals.
 
   Financial data NEVER flows through this channel.
   """
@@ -82,18 +82,6 @@ defmodule FinappWeb.DeviceChannel do
   def handle_info({:alert_triggered, payload}, socket) do
     # payload contains only the opaque rule_token_ref — never the rule content
     push(socket, "alert:triggered", payload)
-    {:noreply, socket}
-  end
-
-  @impl true
-  def handle_info({:model_updated, payload}, socket) do
-    push(socket, "model:updated", payload)
-    {:noreply, socket}
-  end
-
-  @impl true
-  def handle_info({:rules_updated, payload}, socket) do
-    push(socket, "rules:updated", payload)
     {:noreply, socket}
   end
 

@@ -8,7 +8,6 @@ import * as FileSystem from 'expo-file-system';
 import { NativeSqliteDriver } from '../db/driver';
 import { useAuthStore } from '../store/auth';
 import { useCloudStore } from '../store/cloud';
-import { handleModelUpdated } from '../ml';
 
 const DbContext = createContext<DbClient | null>(null);
 
@@ -44,11 +43,6 @@ export function SyncHandler({ db }: { db: DbClient }) {
           })
         )
         .catch((err) => console.error('[DbProvider] sync batch failed:', err));
-    },
-    onModelUpdated: (payload) => {
-      handleModelUpdated(payload).catch((err) =>
-        console.error('[DbProvider] model update failed:', err)
-      );
     },
     onSyncError: ({ account_token_ref, reason }) => {
       console.warn('[DbProvider] sync error for', account_token_ref, reason);
