@@ -43,6 +43,9 @@ defmodule FinappWeb.Router do
     get "/sync/jobs", SyncController, :list_jobs
     post "/sync/jobs/:id/trigger", SyncController, :trigger_now
     put "/sync/jobs/:id/schedule", SyncController, :update_schedule
+
+    # ML training data — devices submit anonymized feature vectors for model training
+    post "/ml/training-data", TrainingController, :submit
   end
 
   # Health check — no auth required
