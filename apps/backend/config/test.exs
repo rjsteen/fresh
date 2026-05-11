@@ -32,6 +32,8 @@ config :finapp, Finapp.Notifications.PushDispatcher, req_plug: {Req.Test, Finapp
 
 config :finapp, :sidecar_token, "test-sidecar-token"
 config :finapp, :cdn_base_url, "https://cdn.test.example.com"
+config :finapp, :ml_sidecar_url, "http://sidecar.test"
+config :finapp, Finapp.ML.SidecarClient, req_plug: {Req.Test, Finapp.ML.SidecarClient}
 
 config :finapp, Oban, repo: Finapp.Repo, testing: :manual
 

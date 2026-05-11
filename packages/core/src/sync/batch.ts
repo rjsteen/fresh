@@ -3,17 +3,18 @@
  *
  * Called when the device receives `sync:complete` from the Phoenix channel.
  * Decrypts the transaction batch with the device's local AES-256-GCM key,
- * upserts each transaction into the on-device SQLite DB, runs ONNX inference,
- * and acknowledges the server.
+ * upserts each transaction into the on-device SQLite DB, runs rule-based
+ * categorization, and acknowledges the server.
  *
  * PRIVACY CONTRACT: The server encrypts the batch with the device's registered
  * key before including it in the signal payload. Financial data is never stored
  * or processed in plaintext on the backend.
  */
 
-import { upsertTransaction, upsertAccount, categorizeTransaction, hasAlertFired, recordAlertFired, getMissedRecurringCharges } from '../db/queries';
+import { upsertTransaction, upsertAccount, categorizeTransaction, hasAlertFired, recordAlertFired, getMissedRecurringCharges, getCategorizationRules } from '../db/queries';
 import type { SqliteDriver } from '../db/client';
 import type { RecurringPattern } from '../db/schema';
+import { normalizePayee, applyRules } from '../ml/categorizer';
 
 export interface SyncedAccount {
   external_id: string;
@@ -40,7 +41,6 @@ export interface WireTransaction {
 }
 
 import type { SyncCompletePayload } from '../channels/socket';
-import type { TransactionCategorizer, AnomalyDetector } from '../ml/inference';
 import { ruleEngine } from '../budget/rules';
 import { detectRecurringPatterns } from '../budget/recurring';
 
@@ -68,10 +68,6 @@ export async function decryptBatch(
 export interface SyncBatchDeps {
   db: SqliteDriver;
   deviceKey: CryptoKey;
-  /** Optional — skipped if not loaded */
-  categorizer?: TransactionCategorizer;
-  /** Optional — skipped if not loaded */
-  anomalyDetector?: AnomalyDetector;
   ackSync: (accountTokenRef: string) => void;
   /** Optional — called with the rule's backend_token_ref when a rule fires */
   notifyAlertFired?: (tokenRef: string) => void;
@@ -83,19 +79,15 @@ export interface SyncBatchDeps {
  * Full sync-complete pipeline:
  *   1. Base64-decode and AES-256-GCM decrypt the encrypted batch
  *   2. Upsert each transaction into the local DB
- *   3. Run ONNX categorizer on uncategorized transactions; write result back
- *   4. Run ONNX anomaly detector on each transaction
- *   5. Send `sync:ack` to the backend
- *
- * Errors in ML inference are logged and skipped so a bad model never prevents
- * transactions from being saved or the ack from being sent.
+ *   3. Run rule-based categorizer on uncategorized transactions
+ *   4. Send `sync:ack` to the backend
  */
 export async function processSyncBatch(
   payload: SyncCompletePayload,
   deps: SyncBatchDeps
 ): Promise<void> {
   const { account_token_ref, encrypted_batch, encrypted_accounts } = payload;
-  const { db, deviceKey, categorizer, anomalyDetector, ackSync, notifyAlertFired, onMissedCharge } = deps;
+  const { db, deviceKey, ackSync, notifyAlertFired, onMissedCharge } = deps;
 
   if (!encrypted_batch && !encrypted_accounts) {
     ackSync(account_token_ref);
@@ -149,6 +141,9 @@ export async function processSyncBatch(
 
   const wireTransactions = await decryptBatch(bytes.buffer, deviceKey);
 
+  // Load categorization rules once for the whole batch
+  const categorizationRules = await getCategorizationRules(db);
+
   for (const tx of wireTransactions) {
     const account_id = accountIdByExternalId.get(tx.account_external_id);
     if (!account_id) {
@@ -173,30 +168,15 @@ export async function processSyncBatch(
       tags: null,
     });
 
-    if (categorizer?.isLoaded && !saved.category_id) {
+    if (!saved.category_id && categorizationRules.length > 0) {
       try {
-        const result = await categorizer.categorize(
-          saved.description,
-          saved.merchant_name,
-          saved.amount,
-          saved.date
-        );
-        await categorizeTransaction(db, saved.id, result.categoryId, 'ml', result.confidence);
+        const payee = normalizePayee(saved.merchant_name ?? saved.description);
+        const categoryId = applyRules(categorizationRules, payee, saved.description);
+        if (categoryId) {
+          await categorizeTransaction(db, saved.id, categoryId, 'rule');
+        }
       } catch (err) {
         console.warn('[processSyncBatch] categorizer failed for tx', saved.id, err);
-      }
-    }
-
-    if (anomalyDetector?.isLoaded) {
-      try {
-        await anomalyDetector.score(
-          saved.description,
-          saved.merchant_name,
-          saved.amount,
-          saved.date
-        );
-      } catch (err) {
-        console.warn('[processSyncBatch] anomaly detector failed for tx', saved.id, err);
       }
     }
 

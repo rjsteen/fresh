@@ -3,14 +3,13 @@
  */
 
 import { useEffect, useRef, useCallback, useState } from 'react';
-import { FinanceSocket, type SignalEvent, type ModelUpdatedPayload, type SyncCompletePayload, type AlertTriggeredPayload } from './socket';
+import { FinanceSocket, type SignalEvent, type SyncCompletePayload, type AlertTriggeredPayload } from './socket';
 
 export interface UseFinanceSocketOptions {
   url: string;
   deviceToken: string | null;
   onSyncComplete?: (payload: SyncCompletePayload) => void;
   onAlertTriggered?: (payload: AlertTriggeredPayload) => void;
-  onModelUpdated?: (payload: ModelUpdatedPayload) => void;
   onSyncError?: (payload: { account_token_ref: string; reason: string }) => void;
   onAccountDeleted?: () => void;
   onDeviceKey?: (key: CryptoKey) => void;
@@ -51,9 +50,6 @@ export function useFinanceSocket(opts: UseFinanceSocketOptions) {
       ),
       socket.on<AlertTriggeredPayload>('alert:triggered', (p) =>
         stableOpts.current.onAlertTriggered?.(p)
-      ),
-      socket.on<ModelUpdatedPayload>('model:updated', (p) =>
-        stableOpts.current.onModelUpdated?.(p)
       ),
       socket.on<{ account_token_ref: string; reason: string }>('sync:error', (p) =>
         stableOpts.current.onSyncError?.(p)

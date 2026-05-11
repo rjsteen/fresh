@@ -13,8 +13,6 @@ export type SignalEvent =
   | 'sync:complete'         // Bank sync job finished
   | 'sync:error'            // Bank sync job failed
   | 'alert:triggered'       // An alert rule fired (identified by opaque token_ref)
-  | 'model:updated'         // New ONNX model weights available on CDN
-  | 'rules:updated'         // New categorization rules available on CDN
   | 'account:deleted'       // User account was deleted — device should wipe local DB and log out
   | 'presence_state'        // Phoenix Presence state
   | 'presence_diff';        // Phoenix Presence diff
@@ -30,13 +28,6 @@ export interface SyncCompletePayload {
 export interface AlertTriggeredPayload {
   rule_token_ref: string;     // Opaque token — device maps this to its local rule
   fired_at: string;           // ISO 8601
-}
-
-export interface ModelUpdatedPayload {
-  model_type: 'categorizer' | 'anomaly';
-  version: string;
-  cdn_path: string;           // Path on CDN (not full URL — device constructs it)
-  checksum_sha256: string;
 }
 
 export interface SocketOptions {

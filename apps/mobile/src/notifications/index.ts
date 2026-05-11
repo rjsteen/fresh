@@ -107,7 +107,6 @@ export function useNotificationResponseListener(router: Router) {
         if (event === 'sync:complete' || event === 'alert:triggered') {
           routerRef.current.push('/(app)/transactions');
         }
-        // model:updated requires no navigation — device pulls weights on next open
       }
     );
 

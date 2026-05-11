@@ -6,6 +6,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import type { SqliteDriver } from './client';
 import type { Account, Transaction, AlertRule, Budget, RecurringPattern } from './schema';
+import type { CategorizationRule, RuleCondition } from '../ml/categorizer';
 
 // ---------------------------------------------------------------------------
 // Accounts
@@ -142,7 +143,16 @@ export async function upsertTransaction(
   db: SqliteDriver,
   tx: Omit<Transaction, 'id' | 'created_at' | 'updated_at'> & { id?: string }
 ): Promise<Transaction> {
-  const id = tx.id ?? uuidv4();
+  // Resolve existing id first (same pattern as upsertAccount) so the trailing
+  // SELECT WHERE id = ? always finds the row regardless of which conflict branch fired.
+  let id = tx.id ?? uuidv4();
+  if (tx.external_id && tx.account_id) {
+    const existing = await db.query<{ id: string }>(
+      'SELECT id FROM transactions WHERE account_id = ? AND external_id = ?',
+      [tx.account_id, tx.external_id]
+    );
+    if (existing[0]) id = existing[0].id;
+  }
   await db.execute(
     `INSERT INTO transactions
        (id, account_id, external_id, amount, currency, description, merchant_name,
@@ -684,4 +694,75 @@ export async function getSpendingByCategory(
      ORDER BY total DESC`,
     [...params, ...params]
   );
+}
+
+// ---------------------------------------------------------------------------
+// Categorization rules
+// ---------------------------------------------------------------------------
+
+type CategorizationRuleRow = Omit<CategorizationRule, 'conditions' | 'is_auto'> & {
+  conditions: string;
+  is_auto: 0 | 1;
+};
+
+function parseRuleRow(r: CategorizationRuleRow): CategorizationRule {
+  return { ...r, conditions: JSON.parse(r.conditions) as RuleCondition[], is_auto: r.is_auto === 1 };
+}
+
+export async function getCategorizationRules(db: SqliteDriver): Promise<CategorizationRule[]> {
+  const rows = await db.query<CategorizationRuleRow>(
+    `SELECT * FROM categorization_rules ORDER BY priority DESC, created_at DESC`
+  );
+  return rows.map(parseRuleRow);
+}
+
+export async function upsertCategorizationRule(
+  db: SqliteDriver,
+  rule: Omit<CategorizationRule, 'id' | 'created_at' | 'updated_at'> & { id?: string }
+): Promise<CategorizationRule> {
+  const id = rule.id ?? uuidv4();
+  await db.execute(
+    `INSERT INTO categorization_rules (id, priority, conditions, category_id, is_auto)
+     VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET
+       priority = excluded.priority,
+       conditions = excluded.conditions,
+       category_id = excluded.category_id,
+       updated_at = datetime('now')`,
+    [id, rule.priority, JSON.stringify(rule.conditions), rule.category_id, rule.is_auto ? 1 : 0]
+  );
+  const rows = await db.query<CategorizationRuleRow>(
+    'SELECT * FROM categorization_rules WHERE id = ?',
+    [id]
+  );
+  return parseRuleRow(rows[0]);
+}
+
+export async function deleteCategorizationRule(db: SqliteDriver, id: string): Promise<void> {
+  await db.execute('DELETE FROM categorization_rules WHERE id = ?', [id]);
+}
+
+/**
+ * Create an auto-generated rule when a user manually assigns a category.
+ * Uses `payee equals <payee>` condition at priority 0 so user-defined rules
+ * (priority 10) always take precedence.
+ */
+export async function createAutoRule(
+  db: SqliteDriver,
+  payee: string,
+  categoryId: string
+): Promise<void> {
+  const existing = await db.query<{ id: string }>(
+    `SELECT id FROM categorization_rules
+     WHERE is_auto = 1 AND category_id = ? AND conditions = ?`,
+    [categoryId, JSON.stringify([{ field: 'payee', op: 'equals', value: payee.toLowerCase() }])]
+  );
+  if (existing.length > 0) return;
+
+  await upsertCategorizationRule(db, {
+    priority: 0,
+    conditions: [{ field: 'payee', op: 'equals', value: payee.toLowerCase() }],
+    category_id: categoryId,
+    is_auto: true,
+  });
 }

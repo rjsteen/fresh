@@ -890,14 +890,14 @@ export function Settings() {
   }
 
   async function handleExportData() {
-    const [accs, txns, cats, budgets, lines, alertRules, anomalies] = await Promise.all([
+    const [accs, txns, cats, budgets, lines, alertRules, categorizationRules] = await Promise.all([
       db.raw.query('SELECT * FROM accounts'),
       db.raw.query('SELECT * FROM transactions'),
       db.raw.query('SELECT * FROM categories'),
       db.raw.query('SELECT * FROM budgets'),
       db.raw.query('SELECT * FROM budget_lines'),
       db.raw.query('SELECT * FROM alert_rules'),
-      db.raw.query('SELECT * FROM anomalies'),
+      db.raw.query('SELECT * FROM categorization_rules'),
     ]);
 
     const payload = {
@@ -908,7 +908,7 @@ export function Settings() {
       budgets,
       budget_lines: lines,
       alert_rules: alertRules,
-      anomalies,
+      categorization_rules: categorizationRules,
     };
 
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
@@ -924,7 +924,7 @@ export function Settings() {
   }
 
   async function wipeLocalDb() {
-    await db.raw.execute('DELETE FROM anomalies');
+    await db.raw.execute('DELETE FROM categorization_rules');
     await db.raw.execute('DELETE FROM recurring_patterns');
     await db.raw.execute('DELETE FROM alert_rules');
     await db.raw.execute('DELETE FROM budget_lines');

@@ -2,14 +2,13 @@
  * Tests for the sync batch decryption and processing pipeline.
  *
  * Uses a real in-memory SQLite DB (via sql.js) and the Web Crypto API
- * available in jsdom. ML deps are injected as mocks to isolate the pipeline
- * from ONNX runtime setup.
+ * available in jsdom. Categorization is rule-based and runs against the
+ * real DB — no mocks needed for the categorizer.
  */
 
 import { vi, expect, describe, it, beforeEach } from 'vitest';
 import { decryptBatch, processSyncBatch } from '@fresh/core/sync';
 import type { WireTransaction, SyncedAccount } from '@fresh/core/sync';
-import type { TransactionCategorizer, AnomalyDetector } from '@fresh/core/ml';
 import { makeTestDb } from '../test/makeTestDb';
 import type { SqliteDriver } from '@fresh/core/db';
 
@@ -112,14 +111,13 @@ describe('processSyncBatch', () => {
     key = await makeAesKey();
     encrypted_accounts = await encryptData([makeWireAccount()], key);
 
-    // Insert categories referenced in tests
     await driver.execute(
       `INSERT INTO categories (id, name, is_system) VALUES (?, ?, ?)`,
       ['cat-food', 'Food & Drink', 1]
     );
     await driver.execute(
       `INSERT INTO categories (id, name, is_system) VALUES (?, ?, ?)`,
-      ['cat-existing', 'Existing', 1]
+      ['cat-coffee', 'Coffee', 1]
     );
   });
 
@@ -152,90 +150,104 @@ describe('processSyncBatch', () => {
     expect(ackSync).toHaveBeenCalledWith('ref-2');
   });
 
-  it('calls categorizer for uncategorized transactions and writes result back', async () => {
+  it('applies a matching categorization rule and writes category back', async () => {
     const ackSync = vi.fn();
-    const categorize = vi.fn().mockResolvedValue({
-      categoryId: 'cat-food',
-      confidence: 0.92,
-      topK: [{ categoryId: 'cat-food', score: 0.92 }],
-    });
 
-    const categorizer = {
-      isLoaded: true,
-      categorize,
-    } as unknown as TransactionCategorizer;
+    await driver.execute(
+      `INSERT INTO categorization_rules (id, priority, conditions, category_id, is_auto)
+       VALUES (?, ?, ?, ?, ?)`,
+      ['rule-1', 10, JSON.stringify([{ field: 'payee', op: 'equals', value: 'blue bottle' }]), 'cat-coffee', 0]
+    );
 
     const encrypted_batch = await encryptData([makeWireTx()], key);
 
     await processSyncBatch(
       { account_token_ref: 'ref-3', transaction_count: 1, cursor: '', encrypted_batch, encrypted_accounts },
-      { db: driver, deviceKey: key, categorizer, ackSync }
+      { db: driver, deviceKey: key, ackSync }
     );
 
-    expect(categorize).toHaveBeenCalledOnce();
-    expect(categorize).toHaveBeenCalledWith('Coffee Shop', 'Blue Bottle', -42.5, '2026-04-08');
-
-    const rows = await driver.query<{ category_id: string; ml_confidence: number }>(
-      'SELECT category_id, ml_confidence FROM transactions WHERE external_id = ?',
+    const rows = await driver.query<{ category_id: string; category_source: string }>(
+      'SELECT category_id, category_source FROM transactions WHERE external_id = ?',
       ['ext-1']
     );
-    expect(rows[0].category_id).toBe('cat-food');
-    expect(rows[0].ml_confidence).toBeCloseTo(0.92);
+    expect(rows[0].category_id).toBe('cat-coffee');
+    expect(rows[0].category_source).toBe('rule');
     expect(ackSync).toHaveBeenCalledWith('ref-3');
   });
 
-  it('skips categorizer for transactions that already have a category', async () => {
+  it('skips categorization when no rules exist', async () => {
     const ackSync = vi.fn();
-    const categorize = vi.fn();
-    const categorizer = { isLoaded: true, categorize } as unknown as TransactionCategorizer;
-
-    const alreadyCategorized = makeWireTx({ external_id: 'ext-cat' });
-    // Pre-insert with a category so the categorizer should be skipped
-    const encrypted_batch = await encryptData([alreadyCategorized], key);
+    const encrypted_batch = await encryptData([makeWireTx()], key);
 
     await processSyncBatch(
       { account_token_ref: 'ref-4', transaction_count: 1, cursor: '', encrypted_batch, encrypted_accounts },
-      { db: driver, deviceKey: key, categorizer, ackSync }
+      { db: driver, deviceKey: key, ackSync }
     );
 
-    // Tx has no category from wire format — categorizer SHOULD be called
-    // This test verifies the categorizer is skipped only when category_id is already set
+    const rows = await driver.query<{ category_id: string | null }>(
+      'SELECT category_id FROM transactions WHERE external_id = ?',
+      ['ext-1']
+    );
+    expect(rows[0].category_id).toBeNull();
     expect(ackSync).toHaveBeenCalledWith('ref-4');
   });
 
-  it('calls anomaly detector for every transaction', async () => {
+  it('skips categorization for transactions that already have a category', async () => {
     const ackSync = vi.fn();
-    const score = vi.fn().mockResolvedValue({ score: 0.1, isAnomaly: false, type: null });
-    const anomalyDetector = { isLoaded: true, score } as unknown as AnomalyDetector;
 
-    const txs = [makeWireTx(), makeWireTx({ external_id: 'ext-2' })];
-    const encrypted_batch = await encryptData(txs, key);
-
-    await processSyncBatch(
-      { account_token_ref: 'ref-5', transaction_count: 2, cursor: '', encrypted_batch, encrypted_accounts },
-      { db: driver, deviceKey: key, anomalyDetector, ackSync }
+    await driver.execute(
+      `INSERT INTO categorization_rules (id, priority, conditions, category_id, is_auto)
+       VALUES (?, ?, ?, ?, ?)`,
+      ['rule-2', 10, JSON.stringify([{ field: 'payee', op: 'contains', value: 'blue bottle' }]), 'cat-food', 0]
     );
 
-    expect(score).toHaveBeenCalledTimes(2);
-    expect(ackSync).toHaveBeenCalledWith('ref-5');
+    // First sync — gets categorized
+    const encrypted_batch = await encryptData([makeWireTx()], key);
+    await processSyncBatch(
+      { account_token_ref: 'ref-5a', transaction_count: 1, cursor: '', encrypted_batch, encrypted_accounts },
+      { db: driver, deviceKey: key, ackSync }
+    );
+
+    // Manually override to a different category
+    await driver.execute(
+      `UPDATE transactions SET category_id = 'cat-coffee', category_source = 'user' WHERE external_id = ?`,
+      ['ext-1']
+    );
+
+    // Second sync — same external_id; upsert should not overwrite the user category
+    const encrypted_batch2 = await encryptData([makeWireTx({ amount: -43 })], key);
+    await processSyncBatch(
+      { account_token_ref: 'ref-5b', transaction_count: 1, cursor: '', encrypted_batch: encrypted_batch2, encrypted_accounts },
+      { db: driver, deviceKey: key, ackSync }
+    );
+
+    const rows = await driver.query<{ category_id: string; category_source: string }>(
+      'SELECT category_id, category_source FROM transactions WHERE external_id = ?',
+      ['ext-1']
+    );
+    expect(rows[0].category_id).toBe('cat-coffee');
+    expect(rows[0].category_source).toBe('user');
   });
 
   it('still acks after a categorizer error', async () => {
     const ackSync = vi.fn();
-    const categorize = vi.fn().mockRejectedValue(new Error('model exploded'));
-    const categorizer = { isLoaded: true, categorize } as unknown as TransactionCategorizer;
+
+    // Insert a rule with an invalid regex that will throw during eval
+    await driver.execute(
+      `INSERT INTO categorization_rules (id, priority, conditions, category_id, is_auto)
+       VALUES (?, ?, ?, ?, ?)`,
+      ['rule-bad', 10, JSON.stringify([{ field: 'payee', op: 'regex', value: '(?invalid' }]), 'cat-food', 0]
+    );
 
     const encrypted_batch = await encryptData([makeWireTx()], key);
 
     await processSyncBatch(
       { account_token_ref: 'ref-6', transaction_count: 1, cursor: '', encrypted_batch, encrypted_accounts },
-      { db: driver, deviceKey: key, categorizer, ackSync }
+      { db: driver, deviceKey: key, ackSync }
     );
 
-    // Transaction was still written
     const rows = await driver.query('SELECT id FROM transactions');
     expect(rows).toHaveLength(1);
-    // Ack was still sent
     expect(ackSync).toHaveBeenCalledWith('ref-6');
   });
 });
